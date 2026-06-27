@@ -19,6 +19,8 @@ export default function Checkout() {
   const [selectedClienteId, setSelectedClienteId] = useState('');
   const [formaPagamento, setFormaPagamento] = useState('Pix');
   const [dataPagamentoFiado, setDataPagamentoFiado] = useState('');
+  const [customDate, setCustomDate] = useState('');
+  const [desconto, setDesconto] = useState(0);
   const [isClientModalOpen, setIsClientModalOpen] = useState(false);
   
   // Cliente Modal State
@@ -145,7 +147,9 @@ export default function Checkout() {
       selectedClienteId || null, 
       formaPagamento, 
       activeCarga ? 'Rua' : 'Online',
-      formaPagamento === 'Fiado' ? dataPagamentoFiado : null
+      formaPagamento === 'Fiado' ? dataPagamentoFiado : null,
+      parseFloat(desconto) || 0,
+      customDate || null
     );
 
     // Notificação Manual WhatsApp
@@ -153,7 +157,7 @@ export default function Checkout() {
       const clientObj = clientes.find(c => c.id === selectedClienteId);
       const clientName = clientObj ? clientObj.nome : 'Cliente Não Identificado';
       const itensList = cart.map(i => `- ${i.nome}: ${i.quantidade}x R$ ${i.preco.toFixed(2)}`).join('\n');
-      const alertMsg = `🛍️ *Nova Venda Realizada!*\n👤 Vendedor: ${currentUser ? currentUser.nome : 'Cliente Online'}\n👤 Cliente: ${clientName}\n💳 Pagamento: ${formaPagamento}\n📍 Tipo: ${activeCarga ? 'Rua' : 'Online'}\n💵 Total: R$ ${cartTotal.toFixed(2)}\n📦 Itens:\n${itensList}`;
+      const alertMsg = `🛍️ *Nova Venda Realizada!*\n👤 Vendedor: ${currentUser ? currentUser.nome : 'Cliente Online'}\n👤 Cliente: ${clientName}\n💳 Pagamento: ${formaPagamento}\n📍 Tipo: ${activeCarga ? 'Rua' : 'Online'}\n💵 Total: R$ ${finalTotal.toFixed(2)}${(parseFloat(desconto) || 0) > 0 ? `\n🏷️ Desconto: R$ ${parseFloat(desconto).toFixed(2)}` : ''}\n📦 Itens:\n${itensList}`;
       
       handleManualWhatsAppNotify(alertMsg);
     }
@@ -163,6 +167,8 @@ export default function Checkout() {
     setSelectedClienteId('');
     setFormaPagamento('Pix');
     setDataPagamentoFiado('');
+    setCustomDate('');
+    setDesconto(0);
     setShowSuccess(true);
 
     setTimeout(() => {
@@ -175,6 +181,8 @@ export default function Checkout() {
     const precoReal = prodCompleto ? getProductPrice(prodCompleto) : item.preco;
     return acc + (item.quantidade * precoReal);
   }, 0);
+
+  const finalTotal = Math.max(0, cartTotal - (parseFloat(desconto) || 0));
 
   return (
     <div style={{ animation: 'fadeIn 0.3s ease-out', textAlign: 'left' }}>
@@ -300,9 +308,35 @@ export default function Checkout() {
                     </div>
                   );
                 })}
+                <div className="flex-between" style={{ fontSize: '14px', marginTop: '8px' }}>
+                  <span>Subtotal:</span>
+                  <span>R$ {cartTotal.toFixed(2)}</span>
+                </div>
+                <div className="flex-between" style={{ fontSize: '14px', marginTop: '4px', alignItems: 'center' }}>
+                  <span>Desconto (R$):</span>
+                  <input 
+                    type="number" 
+                    className="form-input" 
+                    value={desconto}
+                    onChange={(e) => setDesconto(e.target.value)}
+                    style={{ width: '80px', padding: '4px', textAlign: 'right' }}
+                    min="0"
+                    step="0.01"
+                  />
+                </div>
+                <div className="flex-between" style={{ fontSize: '14px', marginTop: '4px', alignItems: 'center' }}>
+                  <span>Data Personalizada (Opcional):</span>
+                  <input 
+                    type="datetime-local" 
+                    className="form-input" 
+                    value={customDate}
+                    onChange={(e) => setCustomDate(e.target.value)}
+                    style={{ width: '160px', padding: '4px' }}
+                  />
+                </div>
                 <div className="flex-between" style={{ fontSize: '18px', fontWeight: 700, marginTop: '8px' }}>
-                  <span>Total:</span>
-                  <span style={{ color: 'var(--primary)' }}>R$ {cartTotal.toFixed(2)}</span>
+                  <span>Total Final:</span>
+                  <span style={{ color: 'var(--primary)' }}>R$ {finalTotal.toFixed(2)}</span>
                 </div>
               </div>
             )}
@@ -374,7 +408,7 @@ export default function Checkout() {
               disabled={cart.length === 0}
               style={{ fontSize: '16px', padding: '12px' }}
             >
-              Registrar Venda {offlineMode ? "Offline" : ""} (R$ {cartTotal.toFixed(2)})
+              Registrar Venda {offlineMode ? "Offline" : ""} (R$ {finalTotal.toFixed(2)})
             </button>
           </div>
         </div>

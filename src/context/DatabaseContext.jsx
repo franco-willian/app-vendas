@@ -687,11 +687,15 @@ export const DatabaseProvider = ({ children }) => {
     formaPagamento,
     tipoVenda = "Rua",
     dataPagamento = null,
+    desconto = 0,
+    dataVendaPersonalizada = null,
   ) => {
-    const total = itensVenda.reduce(
+    const subtotal = itensVenda.reduce(
       (acc, item) => acc + item.quantidade * item.precoUnitario,
       0,
     );
+    const total = Math.max(0, subtotal - desconto);
+    
     const novaVenda = {
       id: Date.now().toString(),
       clienteId,
@@ -701,7 +705,8 @@ export const DatabaseProvider = ({ children }) => {
       dataPagamento,
       tipoVenda,
       total,
-      data: new Date().toISOString(),
+      desconto,
+      data: dataVendaPersonalizada ? new Date(dataVendaPersonalizada).toISOString() : new Date().toISOString(),
       synced: !offlineMode,
       vendedor: currentUser ? currentUser.nome : "Cliente Online",
     };

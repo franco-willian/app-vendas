@@ -9,6 +9,7 @@ import {
   RefreshCw,
   CheckCircle2,
   User,
+  Tag,
 } from "lucide-react";
 
 export default function Dashboard() {
@@ -56,6 +57,8 @@ export default function Dashboard() {
     : 0;
   const lucroLiquidoGeral =
     faturamentoGeral - custoProdutosVendidos - totalDespesas;
+
+  const totalDescontosGerados = vendas.reduce((acc, v) => acc + (v.desconto || 0), 0);
 
   const faturamentoVendedor = validVendasForRevenue
     .filter((v) => v.vendedor === nomeVendedor)
@@ -313,6 +316,38 @@ export default function Dashboard() {
                 }}
               >
                 Acumulado de vendas registradas
+              </p>
+            </div>
+
+            <div className="card">
+              <div className="flex-between mb-16">
+                <span
+                  style={{ color: "var(--text-secondary)", fontWeight: 500 }}
+                >
+                  Descontos Gerados
+                </span>
+                <div
+                  style={{
+                    padding: "8px",
+                    borderRadius: "8px",
+                    background: "rgba(239, 68, 68, 0.1)",
+                    color: "var(--danger)",
+                  }}
+                >
+                  <Tag size={20} />
+                </div>
+              </div>
+              <h3 style={{ fontSize: "32px", fontWeight: 700 }}>
+                R$ {totalDescontosGerados.toFixed(2)}
+              </h3>
+              <p
+                style={{
+                  fontSize: "14px",
+                  color: "var(--text-muted)",
+                  marginTop: "4px",
+                }}
+              >
+                Total de descontos concedidos
               </p>
             </div>
 

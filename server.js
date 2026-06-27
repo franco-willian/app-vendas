@@ -502,7 +502,7 @@ const applyVendaStock = (db, venda) => {
 // Registrar Venda
 app.post('/api/vendas', (req, res) => {
   const db = readDB();
-  const { clienteId, itens, formaPagamento, dataPagamento, tipoVenda, vendedor } = req.body;
+  const { clienteId, itens, formaPagamento, dataPagamento, tipoVenda, vendedor, desconto, data } = req.body;
 
   const total = req.body.total !== undefined ? req.body.total : itens.reduce((acc, item) => acc + (item.quantidade * item.precoUnitario), 0);
 
@@ -515,7 +515,8 @@ app.post('/api/vendas', (req, res) => {
     statusPagamento: formaPagamento === 'Fiado' ? 'pendente' : 'pago',
     tipoVenda, // 'Rua' ou 'Online'
     total,
-    data: new Date().toISOString(),
+    desconto: desconto || 0,
+    data: data || new Date().toISOString(),
     synced: true,
     vendedor: vendedor || 'Cliente Online'
   };
@@ -604,7 +605,7 @@ app.put('/api/vendas/:id', (req, res) => {
   // Reverter estoque da venda antiga
   revertVendaStock(db, oldVenda);
 
-  const { clienteId, itens, formaPagamento, dataPagamento, tipoVenda, vendedor, statusPagamento } = req.body;
+  const { clienteId, itens, formaPagamento, dataPagamento, tipoVenda, vendedor, statusPagamento, data } = req.body;
   const total = req.body.total !== undefined ? req.body.total : itens.reduce((acc, item) => acc + (item.quantidade * item.precoUnitario), 0);
 
   const updatedVenda = {
@@ -617,6 +618,7 @@ app.put('/api/vendas/:id', (req, res) => {
     tipoVenda,
     total,
     vendedor: vendedor || oldVenda.vendedor,
+    data: data || oldVenda.data,
     synced: true
   };
 

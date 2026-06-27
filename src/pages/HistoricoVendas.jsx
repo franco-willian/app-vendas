@@ -31,6 +31,7 @@ export default function HistoricoVendas() {
   const [filtroVendedor, setFiltroVendedor] = useState("");
   const [filtroPagamento, setFiltroPagamento] = useState("");
   const [filtroTipo, setFiltroTipo] = useState("");
+  const [filtroProduto, setFiltroProduto] = useState("");
   const [dataInicio, setDataInicio] = useState("");
   const [dataFim, setDataFim] = useState("");
 
@@ -39,6 +40,7 @@ export default function HistoricoVendas() {
   const [editClienteId, setEditClienteId] = useState("");
   const [editFormaPagamento, setEditFormaPagamento] = useState("Pix");
   const [editDataPagamento, setEditDataPagamento] = useState("");
+  const [editDataVenda, setEditDataVenda] = useState("");
   const [editItens, setEditItens] = useState([]);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
 
@@ -107,12 +109,18 @@ export default function HistoricoVendas() {
       }
     }
 
+    // 6. Filtro de Produto
+    const matchesProduto =
+      !filtroProduto ||
+      venda.itens.some((item) => item.produtoId === filtroProduto);
+
     return (
       matchesSearch &&
       matchesVendedor &&
       matchesPagamento &&
       matchesTipo &&
-      matchesData
+      matchesData &&
+      matchesProduto
     );
   });
 
@@ -122,6 +130,7 @@ export default function HistoricoVendas() {
     setFiltroVendedor("");
     setFiltroPagamento("");
     setFiltroTipo("");
+    setFiltroProduto("");
     setDataInicio("");
     setDataFim("");
   };
@@ -142,6 +151,18 @@ export default function HistoricoVendas() {
     setEditClienteId(venda.clienteId || "");
     setEditFormaPagamento(venda.formaPagamento || "Pix");
     setEditDataPagamento(venda.dataPagamento || "");
+    
+    // Preparar data da venda (datetime-local format: YYYY-MM-DDTHH:mm)
+    if (venda.data) {
+      const date = new Date(venda.data);
+      // Ajuste para fuso horário local
+      const tzOffset = date.getTimezoneOffset() * 60000;
+      const localISOTime = new Date(date - tzOffset).toISOString().slice(0, 16);
+      setEditDataVenda(localISOTime);
+    } else {
+      setEditDataVenda("");
+    }
+
     // Copiar itens
     setEditItens(
       venda.itens.map((item) => ({
@@ -276,6 +297,7 @@ export default function HistoricoVendas() {
       itens: editItens,
       formaPagamento: editFormaPagamento,
       dataPagamento: editFormaPagamento === "Fiado" ? editDataPagamento : null,
+      data: editDataVenda ? new Date(editDataVenda).toISOString() : vendaEditando.data,
       total,
       // manter demais campos do backend
     };
@@ -482,6 +504,23 @@ export default function HistoricoVendas() {
               <option value="">Todas</option>
               <option value="Rua">Carga de Rua</option>
               <option value="Online">Online / Central</option>
+            </select>
+          </div>
+
+          {/* Filtro Produto */}
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label">Produto</label>
+            <select
+              className="form-input w-full"
+              value={filtroProduto}
+              onChange={(e) => setFiltroProduto(e.target.value)}
+            >
+              <option value="">Todos os Produtos</option>
+              {produtos.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.nome}
+                </option>
+              ))}
             </select>
           </div>
 
@@ -725,6 +764,18 @@ export default function HistoricoVendas() {
                       </option>
                     ))}
                   </select>
+                </div>
+
+                {/* Data e Hora da Venda */}
+                <div className="form-group">
+                  <label className="form-label">Data e Hora da Venda</label>
+                  <input
+                    type="datetime-local"
+                    className="form-input w-full"
+                    value={editDataVenda}
+                    onChange={(e) => setEditDataVenda(e.target.value)}
+                    required
+                  />
                 </div>
 
                 {/* Forma de Pagamento */}
