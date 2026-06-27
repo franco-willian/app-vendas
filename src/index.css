@@ -565,6 +565,10 @@ input:checked + .slider:before {
     grid-template-columns: 1fr;
     gap: 16px;
   }
+  
+  .hide-on-mobile {
+    display: none !important;
+  }
 }
 
 /* Card de Divulgação da Loja Online */

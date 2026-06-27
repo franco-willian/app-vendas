@@ -1786,23 +1786,21 @@
   "activeCarga": null,
   "pedidosOnline": [
     {
-      "id": "1782444815739",
-      "clienteId": "1782444815738",
-      "clienteNome": "fr",
-      "clienteWhatsapp": "55999682526",
+      "id": "1782540616285",
+      "clienteId": "1782488699637",
+      "clienteNome": "Dilam \"Rhayssa\"",
+      "clienteWhatsapp": "55999685226",
       "itens": [
         {
-          "produtoId": "5",
-          "nome": "Gourmet Brownie",
+          "produtoId": "1782407806903",
+          "nome": "Bolo de Pote",
           "quantidade": 1,
-          "precoUnitario": 8.5
+          "precoUnitario": 7
         }
       ],
-      "total": 8.5,
-      "data": "2026-06-26T03:33:35.738Z",
-      "status": "recusado",
-      "preferenceId": "487193323-3f59a9b8-9ffa-403b-8996-461d1bf3dd86",
-      "checkoutUrl": "https://www.mercadopago.com.br/checkout/v1/redirect?pref_id=487193323-3f59a9b8-9ffa-403b-8996-461d1bf3dd86"
+      "total": 7,
+      "data": "2026-06-27T06:10:16.284Z",
+      "status": "recusado"
     },
     {
       "id": "1782444747549",
@@ -1824,13 +1822,15 @@
   ],
   "activeCargas": {},
   "configuracoes": {
-    "gerenteWhatsApp": "5555999685226",
+    "gerenteWhatsApp": "555599685226",
     "callMeBotApiKey": "7289955",
     "mercadoPagoAccessToken": "APP_USR-3339933537846427-062400-cf6f9fbdab980c01dabb5f64bb926cef-487193323",
     "notifyCargaStart": true,
     "notifyCargaReturn": true,
     "notifyVendas": true,
-    "notifyEstoqueRetornado": true
+    "notifyEstoqueRetornado": true,
+    "whatsappProvider": "textmebot",
+    "textMeBotApiKey": "bwBtrz7uMnmw"
   },
   "despesas": [
     {

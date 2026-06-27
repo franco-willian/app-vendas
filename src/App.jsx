@@ -209,6 +209,15 @@ function AppContent() {
               flexWrap: "wrap",
             }}
           >
+            {/* Link para a Loja do Cliente */}
+            <a
+              className="btn btn-secondary"
+              href="#/loja"
+              style={{ fontSize: "13px", padding: "8px 14px" }}
+            >
+              <Store size={14} /> Ver Loja Online
+            </a>
+
             {/* Usuário Logado */}
             <button
               onClick={() => {
@@ -236,8 +245,18 @@ function AppContent() {
               </span>
             </button>
 
+            {/* Logout */}
+            <button
+              className="btn btn-secondary btn-icon"
+              onClick={handleLogout}
+              title="Sair do Painel"
+              style={{ width: "36px", height: "36px", padding: 0 }}
+            >
+              <LogOut size={16} style={{ color: "var(--danger)" }} />
+            </button>
+
             {/* Simulação Sem Sinal */}
-            <div className="switch-container">
+            <div className="switch-container hide-on-mobile">
               <span
                 style={{
                   fontWeight: 500,
@@ -256,25 +275,6 @@ function AppContent() {
                 <span className="slider"></span>
               </label>
             </div>
-
-            {/* Link para a Loja do Cliente */}
-            <a
-              className="btn btn-secondary"
-              href="#/loja"
-              style={{ fontSize: "13px", padding: "8px 14px" }}
-            >
-              <Store size={14} /> Ver Loja Online
-            </a>
-
-            {/* Logout */}
-            <button
-              className="btn btn-secondary btn-icon"
-              onClick={handleLogout}
-              title="Sair do Painel"
-              style={{ width: "36px", height: "36px", padding: 0 }}
-            >
-              <LogOut size={16} style={{ color: "var(--danger)" }} />
-            </button>
           </div>
         </div>
       </header>

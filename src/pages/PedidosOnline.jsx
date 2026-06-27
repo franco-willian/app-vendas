@@ -1,11 +1,16 @@
 import React, { useContext, useState } from 'react';
 import { DatabaseContext } from '../context/DatabaseContext';
-import { ShoppingBag, Check, X, Phone, DollarSign, Calendar } from 'lucide-react';
+import { ShoppingBag, Check, X, Phone, DollarSign, Calendar, Edit2, Trash2, Plus, Minus } from 'lucide-react';
 
 export default function PedidosOnline() {
-  const { pedidosOnline, aprovarPedidoOnline, recusarPedidoOnline } = useContext(DatabaseContext);
+  const { pedidosOnline, aprovarPedidoOnline, recusarPedidoOnline, editarPedidoOnline, excluirPedidoOnline, produtos } = useContext(DatabaseContext);
   const [selectedPedido, setSelectedPedido] = useState(null);
   const [formaPagamento, setFormaPagamento] = useState('Pix');
+
+  // Estados de Edição
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [pedidoEditando, setPedidoEditando] = useState(null);
+  const [editItens, setEditItens] = useState([]);
 
   const handleOpenApproveModal = (pedido) => {
     setSelectedPedido(pedido);
@@ -20,6 +25,41 @@ export default function PedidosOnline() {
 
   const pendingPedidos = pedidosOnline.filter(p => p.status === 'pendente');
   const pastPedidos = pedidosOnline.filter(p => p.status !== 'pendente');
+
+  // Funções de Edição
+  const handleOpenEditModal = (pedido) => {
+    setPedidoEditando(pedido);
+    setEditItens([...pedido.itens]);
+    setIsEditModalOpen(true);
+  };
+
+  const handleUpdateItemQty = (prodId, delta) => {
+    setEditItens((prev) =>
+      prev
+        .map((item) => {
+          if (item.produtoId === prodId) {
+            const newQty = item.quantidade + delta;
+            return { ...item, quantidade: newQty };
+          }
+          return item;
+        })
+        .filter((item) => item.quantidade > 0)
+    );
+  };
+
+  const handleSaveEdit = () => {
+    if (!pedidoEditando) return;
+    const novoTotal = editItens.reduce((acc, item) => acc + item.quantidade * item.precoUnitario, 0);
+    editarPedidoOnline(pedidoEditando.id, { itens: editItens, total: novoTotal });
+    setIsEditModalOpen(false);
+    setPedidoEditando(null);
+  };
+
+  const handleDelete = (id) => {
+    if (window.confirm("Deseja realmente excluir este pedido?")) {
+      excluirPedidoOnline(id);
+    }
+  };
 
   return (
     <div style={{ animation: 'fadeIn 0.3s ease-out', textAlign: 'left' }}>
@@ -58,7 +98,15 @@ export default function PedidosOnline() {
                           <Phone size={12} /> {p.clienteWhatsapp}
                         </div>
                       </div>
-                      <span className="badge badge-warning" style={{ fontSize: '10px' }}>Pendente</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <button className="btn btn-secondary btn-icon" style={{ padding: '4px', width: '28px', height: '28px' }} onClick={() => handleOpenEditModal(p)} title="Editar Pedido">
+                          <Edit2 size={14} style={{ color: 'var(--primary)' }} />
+                        </button>
+                        <button className="btn btn-secondary btn-icon" style={{ padding: '4px', width: '28px', height: '28px' }} onClick={() => handleDelete(p.id)} title="Excluir Pedido">
+                          <Trash2 size={14} style={{ color: 'var(--danger)' }} />
+                        </button>
+                        <span className="badge badge-warning" style={{ fontSize: '10px' }}>Pendente</span>
+                      </div>
                     </div>
 
                     {/* Itens do Pedido */}
@@ -125,9 +173,17 @@ export default function PedidosOnline() {
                           R$ {p.total.toFixed(2)} • {new Date(p.data).toLocaleDateString()}
                         </div>
                       </div>
-                      <span className={`badge ${p.status === 'aprovado' ? 'badge-success' : 'badge-danger'}`} style={{ fontSize: '9px', padding: '2px 6px' }}>
-                        {p.status}
-                      </span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span className={`badge ${p.status === 'aprovado' ? 'badge-success' : 'badge-danger'}`} style={{ fontSize: '9px', padding: '2px 6px' }}>
+                          {p.status}
+                        </span>
+                        <button className="btn btn-secondary btn-icon" style={{ padding: '4px', width: '24px', height: '24px' }} onClick={() => handleOpenEditModal(p)} title="Editar Pedido">
+                          <Edit2 size={12} style={{ color: 'var(--primary)' }} />
+                        </button>
+                        <button className="btn btn-secondary btn-icon" style={{ padding: '4px', width: '24px', height: '24px' }} onClick={() => handleDelete(p.id)} title="Excluir Pedido">
+                          <Trash2 size={12} style={{ color: 'var(--danger)' }} />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -173,6 +229,105 @@ export default function PedidosOnline() {
             <div className="modal-footer">
               <button className="btn btn-secondary" onClick={() => setSelectedPedido(null)}>Cancelar</button>
               <button className="btn btn-success" onClick={handleConfirmApproval}>Confirmar e Registrar Venda</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Edição */}
+      {isEditModalOpen && pedidoEditando && (
+        <div className="modal-overlay">
+          <div className="modal-content" style={{ maxWidth: '400px' }}>
+            <div className="modal-header flex-between">
+              <h3 style={{ margin: 0, fontSize: '16px' }}>Editar Pedido #{pedidoEditando.id.slice(-4)}</h3>
+              <button
+                className="btn btn-secondary btn-icon"
+                onClick={() => setIsEditModalOpen(false)}
+                style={{ padding: '4px' }}
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div className="form-group">
+                <label className="form-label">Cliente</label>
+                <input type="text" className="form-input w-full" value={pedidoEditando.clienteNome} disabled />
+              </div>
+
+              <div>
+                <label className="form-label">Itens do Pedido</label>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {editItens.map((item) => (
+                    <div
+                      key={item.produtoId}
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        padding: "8px",
+                        border: "1px solid var(--border)",
+                        borderRadius: "var(--radius-sm)",
+                        background: "var(--bg-app)"
+                      }}
+                    >
+                      <div>
+                        <div style={{ fontSize: "14px", fontWeight: "500" }}>{item.nome}</div>
+                        <div style={{ fontSize: "12px", color: "var(--text-muted)" }}>
+                          R$ {item.precoUnitario.toFixed(2)}
+                        </div>
+                      </div>
+                      
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <button
+                          className="btn btn-secondary btn-icon"
+                          onClick={() => handleUpdateItemQty(item.produtoId, -1)}
+                          style={{ width: "24px", height: "24px", padding: 0 }}
+                        >
+                          <Minus size={12} />
+                        </button>
+                        <span style={{ fontSize: '13px', fontWeight: '500', minWidth: '16px', textAlign: 'center' }}>
+                          {item.quantidade}
+                        </span>
+                        <button
+                          className="btn btn-secondary btn-icon"
+                          onClick={() => handleUpdateItemQty(item.produtoId, 1)}
+                          style={{ width: "24px", height: "24px", padding: 0 }}
+                        >
+                          <Plus size={12} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                  {editItens.length === 0 && (
+                    <div style={{ textAlign: 'center', padding: '16px', color: 'var(--text-muted)', fontSize: '13px' }}>
+                      Nenhum item no pedido.
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex-between" style={{ marginTop: '8px', padding: '12px 0', borderTop: '1px solid var(--border)' }}>
+                <span style={{ fontSize: '14px', fontWeight: '500' }}>Novo Total:</span>
+                <strong style={{ fontSize: '18px', color: 'var(--primary)' }}>
+                  R$ {editItens.reduce((acc, item) => acc + item.quantidade * item.precoUnitario, 0).toFixed(2)}
+                </strong>
+              </div>
+            </div>
+
+            <div className="modal-footer">
+              <button
+                className="btn btn-secondary"
+                onClick={() => setIsEditModalOpen(false)}
+              >
+                Cancelar
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={handleSaveEdit}
+              >
+                Salvar Alterações
+              </button>
             </div>
           </div>
         </div>

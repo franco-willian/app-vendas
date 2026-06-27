@@ -11,7 +11,9 @@ export default function Notificacoes() {
 
   // Config WhatsApp State
   const [gerenteWhatsApp, setGerenteWhatsApp] = useState('');
+  const [whatsappProvider, setWhatsappProvider] = useState('callmebot');
   const [callMeBotApiKey, setCallMeBotApiKey] = useState('');
+  const [textMeBotApiKey, setTextMeBotApiKey] = useState('');
   const [notifyCargaStart, setNotifyCargaStart] = useState(true);
   const [notifyCargaReturn, setNotifyCargaReturn] = useState(true);
   const [notifyVendas, setNotifyVendas] = useState(true);
@@ -20,7 +22,9 @@ export default function Notificacoes() {
   useEffect(() => {
     if (configuracoes) {
       setGerenteWhatsApp(configuracoes.gerenteWhatsApp || '');
+      setWhatsappProvider(configuracoes.whatsappProvider || 'callmebot');
       setCallMeBotApiKey(configuracoes.callMeBotApiKey || '');
+      setTextMeBotApiKey(configuracoes.textMeBotApiKey || '');
       setNotifyCargaStart(configuracoes.notifyCargaStart !== false);
       setNotifyCargaReturn(configuracoes.notifyCargaReturn !== false);
       setNotifyVendas(configuracoes.notifyVendas !== false);
@@ -33,7 +37,9 @@ export default function Notificacoes() {
     updateConfiguracoes({ 
       ...configuracoes,
       gerenteWhatsApp, 
+      whatsappProvider,
       callMeBotApiKey, 
+      textMeBotApiKey, 
       notifyCargaStart, 
       notifyCargaReturn, 
       notifyVendas, 
@@ -48,13 +54,15 @@ export default function Notificacoes() {
       return;
     }
     
-    if (callMeBotApiKey) {
+    if (callMeBotApiKey || textMeBotApiKey) {
       fetch('/api/whatsapp/test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           gerenteWhatsApp, 
+          whatsappProvider,
           callMeBotApiKey,
+          textMeBotApiKey,
           notifyCargaStart,
           notifyCargaReturn,
           notifyVendas,
@@ -66,11 +74,11 @@ export default function Notificacoes() {
         return res.json();
       })
       .then(() => {
-        alert("Mensagem de teste enviada via CallMeBot! Verifique seu WhatsApp.");
+        alert(`Mensagem de teste enviada via ${whatsappProvider === 'textmebot' ? 'TextMeBot' : 'CallMeBot'}! Verifique seu WhatsApp.`);
       })
       .catch(err => {
         console.error(err);
-        alert("Falha ao enviar mensagem de teste via CallMeBot.");
+        alert(`Falha ao enviar mensagem de teste via ${whatsappProvider === 'textmebot' ? 'TextMeBot' : 'CallMeBot'}.`);
       });
     } else {
       // Teste manual
@@ -129,19 +137,47 @@ export default function Notificacoes() {
               </span>
             </div>
 
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <label className="form-label" style={{ fontWeight: 500 }}>Chave API CallMeBot (Opcional)</label>
-              <input
-                type="text"
-                className="form-input w-full"
-                value={callMeBotApiKey}
-                onChange={(e) => setCallMeBotApiKey(e.target.value)}
-                placeholder="Chave de API do CallMeBot"
-              />
-              <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
-                Deixe em branco para envio manual via WhatsApp Web, ou insira a chave obtida no site <a href="https://www.callmebot.com" target="_blank" rel="noreferrer" style={{ textDecoration: 'underline', color: 'var(--primary)' }}>callmebot.com</a>.
-              </span>
+            <div className="form-group" style={{ marginBottom: '14px' }}>
+              <label className="form-label" style={{ fontWeight: 500 }}>Sistema de Envio</label>
+              <select 
+                className="form-input w-full" 
+                value={whatsappProvider} 
+                onChange={(e) => setWhatsappProvider(e.target.value)}
+              >
+                <option value="callmebot">CallMeBot</option>
+                <option value="textmebot">TextMeBot</option>
+              </select>
             </div>
+
+            {whatsappProvider === 'callmebot' ? (
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label" style={{ fontWeight: 500 }}>Chave API CallMeBot (Opcional)</label>
+                <input
+                  type="text"
+                  className="form-input w-full"
+                  value={callMeBotApiKey}
+                  onChange={(e) => setCallMeBotApiKey(e.target.value)}
+                  placeholder="Chave de API do CallMeBot"
+                />
+                <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
+                  Deixe em branco para envio manual via WhatsApp Web, ou insira a chave obtida no site <a href="https://www.callmebot.com" target="_blank" rel="noreferrer" style={{ textDecoration: 'underline', color: 'var(--primary)' }}>callmebot.com</a>.
+                </span>
+              </div>
+            ) : (
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label" style={{ fontWeight: 500 }}>Chave API TextMeBot (Opcional)</label>
+                <input
+                  type="text"
+                  className="form-input w-full"
+                  value={textMeBotApiKey}
+                  onChange={(e) => setTextMeBotApiKey(e.target.value)}
+                  placeholder="Chave de API do TextMeBot"
+                />
+                <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
+                  Insira a chave obtida no site <a href="https://textmebot.com" target="_blank" rel="noreferrer" style={{ textDecoration: 'underline', color: 'var(--primary)' }}>textmebot.com</a>.
+                </span>
+              </div>
+            )}
           </div>
 
 

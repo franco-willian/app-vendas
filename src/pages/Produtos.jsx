@@ -28,7 +28,7 @@ export default function Produtos() {
   const [fotoUrl, setFotoUrl] = useState("");
 
   // Verifica se o usuário logado tem permissão administrativa
-  const isAdmin = currentUser && currentUser.tipo === "admin-vendedor";
+  const isAdmin = currentUser && (currentUser.tipo === "admin-vendedor" || currentUser.tipo === "admin" || currentUser.tipo === "gerente");
 
   const handleOpenAddModal = () => {
     setNome("");

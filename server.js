@@ -115,25 +115,44 @@ const writeDB = (data) => {
 const sendWhatsAppAlert = (db, message) => {
   const config = db.configuracoes || {};
   const phone = config.gerenteWhatsApp;
-  const apikey = config.callMeBotApiKey;
+  
+  // Detect provider (default to callmebot)
+  const provider = config.whatsappProvider || 'callmebot';
+  const callMeBotKey = config.callMeBotApiKey;
+  const textMeBotKey = config.textMeBotApiKey;
 
-  if (!phone || !apikey) {
-    console.log("[WhatsApp Alert] WhatsApp number or CallMeBot API Key not configured. Skipping background alert.");
+  if (!phone) {
+    console.log("[WhatsApp Alert] WhatsApp number not configured. Skipping alert.");
     return;
   }
 
-  // CallMeBot text must be url encoded
   const encodedText = encodeURIComponent(message);
-  const url = `https://api.callmebot.com/whatsapp.php?phone=${phone}&text=${encodedText}&apikey=${apikey}`;
+  let url = '';
 
-  https.get(url, (res) => {
+  if (provider === 'textmebot') {
+    if (!textMeBotKey) {
+      console.log("[WhatsApp Alert] TextMeBot API Key not configured. Skipping.");
+      return;
+    }
+    url = `https://api.textmebot.com/send.php?recipient=${phone}&apikey=${textMeBotKey}&text=${encodedText}`;
+  } else {
+    if (!callMeBotKey) {
+      console.log("[WhatsApp Alert] CallMeBot API Key not configured. Skipping.");
+      return;
+    }
+    url = `https://api.callmebot.com/whatsapp.php?phone=${phone}&text=${encodedText}&apikey=${callMeBotKey}`;
+  }
+
+  const httpModule = url.startsWith('https') ? https : require('http');
+
+  httpModule.get(url, (res) => {
     let data = '';
     res.on('data', (chunk) => { data += chunk; });
     res.on('end', () => {
-      console.log(`[WhatsApp Alert] Response from CallMeBot: ${data}`);
+      console.log(`[WhatsApp Alert - ${provider}] Response: ${data}`);
     });
   }).on('error', (err) => {
-    console.error("[WhatsApp Alert Error] Failed to send WhatsApp via CallMeBot:", err.message);
+    console.error(`[WhatsApp Alert Error - ${provider}] Failed to send WhatsApp:`, err.message);
   });
 };
 
@@ -296,12 +315,12 @@ app.post('/api/configuracoes', (req, res) => {
 // Testar Notificação do WhatsApp
 app.post('/api/whatsapp/test', (req, res) => {
   const db = readDB();
-  const { gerenteWhatsApp, callMeBotApiKey } = req.body;
+  const { gerenteWhatsApp, callMeBotApiKey, textMeBotApiKey, whatsappProvider } = req.body;
   const tempDB = {
     ...db,
-    configuracoes: { gerenteWhatsApp, callMeBotApiKey }
+    configuracoes: { gerenteWhatsApp, callMeBotApiKey, textMeBotApiKey, whatsappProvider }
   };
-  const testMsg = `🔔 *Teste de Conexão do VendaRápida!*\nSeu WhatsApp foi configurado e está pronto para receber notificações de vendas e caixa!`;
+  const testMsg = `🔔 *Teste de Conexão do VendaRápida!*\nSeu WhatsApp foi configurado e está pronto para receber notificações de vendas e caixa via ${whatsappProvider === 'textmebot' ? 'TextMeBot' : 'CallMeBot'}!`;
   sendWhatsAppAlert(tempDB, testMsg);
   res.json({ success: true });
 });
@@ -843,6 +862,43 @@ app.post('/api/pedidos-online/reject', (req, res) => {
 
   writeDB(db);
   res.json({ success: true });
+});
+
+// Editar Pedido Online (PUT)
+app.put('/api/pedidos-online/:id', (req, res) => {
+  const db = readDB();
+  const { id } = req.params;
+  const pedidoIndex = db.pedidosOnline.findIndex(p => p.id === id);
+  if (pedidoIndex === -1) {
+    return res.status(404).json({ error: 'Pedido online não encontrado' });
+  }
+
+  const { itens, total } = req.body;
+  const oldPedido = db.pedidosOnline[pedidoIndex];
+  
+  const updatedPedido = {
+    ...oldPedido,
+    itens: itens || oldPedido.itens,
+    total: total !== undefined ? total : oldPedido.total,
+  };
+
+  db.pedidosOnline[pedidoIndex] = updatedPedido;
+  writeDB(db);
+  res.json(updatedPedido);
+});
+
+// Excluir Pedido Online (DELETE)
+app.delete('/api/pedidos-online/:id', (req, res) => {
+  const db = readDB();
+  const { id } = req.params;
+  const pedidoIndex = db.pedidosOnline.findIndex(p => p.id === id);
+  if (pedidoIndex === -1) {
+    return res.status(404).json({ error: 'Pedido online não encontrado' });
+  }
+
+  db.pedidosOnline.splice(pedidoIndex, 1);
+  writeDB(db);
+  res.json({ success: true, message: 'Pedido online removido' });
 });
 
 // Criar Preferência de Pagamento no Mercado Pago

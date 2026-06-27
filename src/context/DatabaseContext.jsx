@@ -1068,6 +1068,47 @@ export const DatabaseProvider = ({ children }) => {
     }
   };
 
+  const editarPedidoOnline = (pedidoId, novosDados) => {
+    // Atualiza localmente
+    setPedidosOnline((prev) =>
+      prev.map((p) =>
+        p.id === pedidoId
+          ? {
+              ...p,
+              itens: novosDados.itens || p.itens,
+              total: novosDados.total !== undefined ? novosDados.total : p.total,
+            }
+          : p
+      )
+    );
+
+    if (!offlineMode) {
+      fetch(`/api/pedidos-online/${pedidoId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(novosDados),
+      })
+        .then(() => loadDataFromBackend())
+        .catch((err) =>
+          console.error("Erro ao editar pedido online:", err)
+        );
+    }
+  };
+
+  const excluirPedidoOnline = (pedidoId) => {
+    setPedidosOnline((prev) => prev.filter((p) => p.id !== pedidoId));
+
+    if (!offlineMode) {
+      fetch(`/api/pedidos-online/${pedidoId}`, {
+        method: "DELETE",
+      })
+        .then(() => loadDataFromBackend())
+        .catch((err) =>
+          console.error("Erro ao excluir pedido online:", err)
+        );
+    }
+  };
+
   // Sincronizar vendas salvas offline (Lote)
   const sincronizarVendasOffline = () => {
     const offlineVendas = vendas.filter((v) => !v.synced);
@@ -1205,6 +1246,8 @@ export const DatabaseProvider = ({ children }) => {
         registrarPedidoOnline,
         aprovarPedidoOnline,
         recusarPedidoOnline,
+        editarPedidoOnline,
+        excluirPedidoOnline,
         adicionarDespesa,
         excluirDespesa,
         sincronizarVendasOffline,
