@@ -1,0 +1,18 @@
+{
+  "short_name": "VendaRápida",
+  "name": "VendaRápida - Controle de Vendas",
+  "description": "Controle suas vendas na rua offline e receba pedidos online.",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/263/263142.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": ".",
+  "background_color": "#0f172a",
+  "theme_color": "#4f46e5",
+  "display": "standalone",
+  "orientation": "portrait"
+}
