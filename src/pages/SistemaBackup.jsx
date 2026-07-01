@@ -1,14 +1,48 @@
-import React, { useState } from 'react';
-import { Download, Upload, AlertTriangle, CheckCircle, Database } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Download, Upload, AlertTriangle, CheckCircle, Database, Plus, FileJson, Loader2 } from 'lucide-react';
+import { toast } from 'react-hot-toast';
+import { useConfirm } from '../context/ConfirmContext';
 
 export default function SistemaBackup() {
+  const { confirm } = useConfirm();
   const [file, setFile] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [generating, setGenerating] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState(false);
+  const [backupsList, setBackupsList] = useState([]);
 
-  const handleDownload = () => {
-    window.location.href = '/api/backup';
+  const fetchBackups = async () => {
+    try {
+      const res = await fetch('/api/backups');
+      const data = await res.json();
+      setBackupsList(data || []);
+    } catch (err) {
+      console.error("Erro ao listar backups", err);
+    }
+  };
+
+  useEffect(() => {
+    fetchBackups();
+  }, []);
+
+  const handleGenerateBackup = async () => {
+    setGenerating(true);
+    try {
+      const res = await fetch('/api/backup/generate', { method: 'POST' });
+      const data = await res.json();
+      if (res.ok) {
+        toast.success("Backup gerado com sucesso e enviado pro WhatsApp!");
+        fetchBackups();
+        window.location.href = `/api/backup/download/${data.filename}`;
+      } else {
+        toast.error("Erro: " + data.error);
+      }
+    } catch (err) {
+      toast.error("Erro ao gerar backup.");
+    } finally {
+      setGenerating(false);
+    }
   };
 
   const handleFileChange = (e) => {
@@ -24,7 +58,7 @@ export default function SistemaBackup() {
       return;
     }
 
-    if (!window.confirm("ATENÇÃO: Restaurar um backup irá substituir TODOS os dados atuais do sistema. Deseja continuar?")) {
+    if (!await confirm({ title: "Restaurar Backup", message: "ATENÇÃO: Restaurar um backup irá substituir TODOS os dados atuais do sistema. Deseja continuar?" })) {
       return;
     }
 
@@ -87,16 +121,47 @@ export default function SistemaBackup() {
 
       <div className="card mb-24">
         <h3 style={{ fontSize: "18px", marginBottom: "16px", display: "flex", alignItems: "center", gap: "8px" }}>
-          <Download size={20} />
-          Exportar Backup
+          <Database size={20} />
+          Últimos Backups do Sistema
         </h3>
         <p style={{ color: "var(--text-secondary)", marginBottom: "16px", fontSize: "14px" }}>
-          Faça o download de todos os seus dados atuais (produtos, vendas, clientes, etc) no formato JSON. Guarde este arquivo em um local seguro.
+          Aqui estão os últimos 5 backups gerados. Quando você gera um novo, ele é salvo e enviado pelo WhatsApp (se configurado).
         </p>
-        <button className="btn btn-primary" onClick={handleDownload} style={{ padding: "10px 20px", display: "flex", alignItems: "center", gap: "8px" }}>
-          <Download size={18} />
-          Baixar Backup (.json)
+        
+        <button 
+          className="btn btn-primary mb-16" 
+          onClick={handleGenerateBackup} 
+          disabled={generating}
+          style={{ padding: "10px 20px", display: "flex", alignItems: "center", gap: "8px" }}
+        >
+          {generating ? <Loader2 size={18} className="animate-spin" /> : <Plus size={18} />}
+          {generating ? "Gerando e Enviando..." : "Gerar Novo Backup Agora"}
         </button>
+
+        {backupsList.length > 0 ? (
+          <div style={{ background: "var(--bg-app)", borderRadius: "8px", border: "1px solid var(--border)" }}>
+            {backupsList.map((bkp, i) => (
+              <div key={i} className="flex-between" style={{ padding: "12px 16px", borderBottom: i < backupsList.length - 1 ? "1px solid var(--border)" : "none" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                  <FileJson size={20} style={{ color: "var(--primary)" }} />
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: "14px" }}>{bkp.name}</div>
+                    <div style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
+                      {new Date(bkp.date).toLocaleString('pt-BR')} • {(bkp.size / 1024).toFixed(2)} KB
+                    </div>
+                  </div>
+                </div>
+                <a href={`/api/backup/download/${bkp.name}`} className="btn btn-secondary btn-icon" title="Baixar Arquivo">
+                  <Download size={18} />
+                </a>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div style={{ padding: "20px", textAlign: "center", color: "var(--text-muted)", background: "var(--bg-app)", borderRadius: "8px" }}>
+            Nenhum backup gerado ainda.
+          </div>
+        )}
       </div>
 
       <div className="card" style={{ borderLeft: "4px solid var(--warning)" }}>

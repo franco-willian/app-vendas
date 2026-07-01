@@ -1,8 +1,11 @@
 import React, { useContext, useState } from 'react';
 import { DatabaseContext } from '../context/DatabaseContext';
 import { ShoppingBag, Check, X, Phone, DollarSign, Calendar, Edit2, Trash2, Plus, Minus } from 'lucide-react';
+import { toast } from 'react-hot-toast';
+import { useConfirm } from '../context/ConfirmContext';
 
 export default function PedidosOnline() {
+  const { confirm } = useConfirm();
   const { pedidosOnline, aprovarPedidoOnline, recusarPedidoOnline, editarPedidoOnline, excluirPedidoOnline, produtos } = useContext(DatabaseContext);
   const [selectedPedido, setSelectedPedido] = useState(null);
   const [formaPagamento, setFormaPagamento] = useState('Pix');
@@ -20,7 +23,7 @@ export default function PedidosOnline() {
     if (!selectedPedido) return;
     aprovarPedidoOnline(selectedPedido.id, formaPagamento);
     setSelectedPedido(null);
-    alert("Pedido aprovado! A venda foi registrada e o estoque principal foi atualizado.");
+    toast.success("Pedido aprovado! A venda foi registrada e o estoque principal foi atualizado.");
   };
 
   const pendingPedidos = pedidosOnline.filter(p => p.status === 'pendente');
@@ -55,8 +58,8 @@ export default function PedidosOnline() {
     setPedidoEditando(null);
   };
 
-  const handleDelete = (id) => {
-    if (window.confirm("Deseja realmente excluir este pedido?")) {
+  const handleDelete = async (id) => {
+    if (await confirm({ title: "Excluir Pedido", message: "Deseja realmente excluir este pedido?" })) {
       excluirPedidoOnline(id);
     }
   };

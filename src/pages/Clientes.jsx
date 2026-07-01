@@ -1,8 +1,11 @@
 import React, { useContext, useState } from 'react';
 import { DatabaseContext } from '../context/DatabaseContext';
 import { Plus, Search, MessageSquare, Mail, User, Edit2, Trash2 } from 'lucide-react';
+import { toast } from 'react-hot-toast';
+import { useConfirm } from '../context/ConfirmContext';
 
 export default function Clientes() {
+  const { confirm } = useConfirm();
   const { clientes, addCliente, updateCliente, deleteCliente } = useContext(DatabaseContext);
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -16,16 +19,16 @@ export default function Clientes() {
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!nome || !whatsapp) {
-      alert("Por favor, preencha o Nome e o WhatsApp.");
+      toast.success("Por favor, preencha o Nome e o WhatsApp.");
       return;
     }
 
     if (editingClient) {
       updateCliente(editingClient.id, { nome, whatsapp, email });
-      alert("Cliente atualizado com sucesso!");
+      toast.success("Cliente atualizado com sucesso!");
     } else {
       addCliente({ nome, whatsapp, email });
-      alert("Cliente cadastrado com sucesso!");
+      toast.success("Cliente cadastrado com sucesso!");
     }
 
     // Reset
@@ -40,10 +43,10 @@ export default function Clientes() {
     setIsModalOpen(true);
   };
 
-  const handleDeleteClick = (id, clientNome) => {
-    if (window.confirm(`Tem certeza que deseja excluir o cliente "${clientNome}"?`)) {
+  const handleDeleteClick = async (id, clientNome) => {
+    if (await confirm({ title: "Excluir Cliente", message: `Tem certeza que deseja excluir o cliente "${clientNome}"?` })) {
       deleteCliente(id);
-      alert("Cliente excluído com sucesso!");
+      toast.success("Cliente excluído com sucesso!");
     }
   };
 

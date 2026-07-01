@@ -1,8 +1,11 @@
 import React, { useContext, useEffect, useState } from 'react';
 import { DatabaseContext } from '../context/DatabaseContext';
-import { Settings, Save, Server, Shield, HardDrive, Bell } from 'lucide-react';
+import { Settings, Save, Server, Shield, HardDrive, Bell, RefreshCw } from 'lucide-react';
+import { toast } from 'react-hot-toast';
+import { useConfirm } from '../context/ConfirmContext';
 
 export default function SistemaConfig() {
+  const { confirm } = useConfirm();
   const { configuracoes, updateConfiguracoes } = useContext(DatabaseContext);
   const [serverInfo, setServerInfo] = useState(null);
   
@@ -43,7 +46,27 @@ export default function SistemaConfig() {
       ...configuracoes,
       ...formData
     });
-    alert("Configurações do sistema salvas com sucesso!");
+    toast.success("Configurações do sistema salvas com sucesso!");
+  };
+
+  const handleControlService = async (service, action) => {
+    const serviceName = service === 'backend' ? 'Node Backend' : 'WhatsApp Microservice';
+    const actionName = action === 'restart' ? 'reiniciar' : 'parar';
+    
+    if (!await confirm({ title: "Atenção: Controle de Serviço", message: `Isso irá ${actionName} o ${serviceName}. Se você não estiver usando um gerenciador de processos (como PM2), o servidor ficará offline até ser iniciado manualmente. Deseja continuar?` })) return;
+    
+    try {
+      const endpoint = service === 'backend' ? `/api/${action}` : `/api/whatsapp/${action}`;
+      const res = await fetch(endpoint, { method: 'POST' });
+      if (res.ok) {
+        toast.success(`Comando para ${actionName} o ${serviceName} enviado com sucesso!`);
+      } else {
+        toast.error("Erro retornado pelo servidor.");
+      }
+    } catch (err) {
+      console.error(err);
+      toast.success(`Comando enviado (sem resposta, o serviço provávelmente já foi ${action === 'restart' ? 'reiniciado' : 'parado'}).`);
+    }
   };
 
   return (
@@ -100,8 +123,42 @@ export default function SistemaConfig() {
                 </div>
               </div>
               
-              <div style={{ fontSize: "12px", color: "var(--text-muted)", marginTop: "8px" }}>
-                Nota: Para alterar informações como a porta do servidor, é necessário modificar o arquivo de inicialização e reiniciar o processo Node.js.
+              <div style={{ fontSize: "12px", color: "var(--text-muted)", marginTop: "8px", display: "flex", flexDirection: "column", gap: "12px" }}>
+                <p style={{ margin: 0 }}>Controle de Serviços (Utilize PM2 na VPS para reinício automático):</p>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+                  <button 
+                    type="button"
+                    className="btn" 
+                    onClick={() => handleControlService('backend', 'restart')}
+                    style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", padding: "8px", background: "var(--warning)", color: "#000", border: "none" }}
+                  >
+                    <RefreshCw size={14} /> Reiniciar API
+                  </button>
+                  <button 
+                    type="button"
+                    className="btn" 
+                    onClick={() => handleControlService('backend', 'stop')}
+                    style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", padding: "8px", background: "var(--danger)", color: "white", border: "none" }}
+                  >
+                    Parar API
+                  </button>
+                  <button 
+                    type="button"
+                    className="btn" 
+                    onClick={() => handleControlService('whatsapp', 'restart')}
+                    style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", padding: "8px", background: "var(--success)", color: "white", border: "none" }}
+                  >
+                    <RefreshCw size={14} /> Reiniciar WhatsApp
+                  </button>
+                  <button 
+                    type="button"
+                    className="btn" 
+                    onClick={() => handleControlService('whatsapp', 'stop')}
+                    style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", padding: "8px", background: "var(--danger)", color: "white", border: "none" }}
+                  >
+                    Parar WhatsApp
+                  </button>
+                </div>
               </div>
             </div>
           ) : (

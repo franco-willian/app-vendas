@@ -1,5 +1,7 @@
 import React, { useContext, useState } from "react";
 import { DatabaseContext } from "../context/DatabaseContext";
+import { useConfirm } from '../context/ConfirmContext';
+import { toast } from 'react-hot-toast';
 import {
   Search,
   DollarSign,
@@ -15,6 +17,7 @@ import {
 } from "lucide-react";
 
 export default function HistoricoVendas() {
+  const { confirm } = useConfirm();
   const {
     vendas,
     produtos,
@@ -43,6 +46,9 @@ export default function HistoricoVendas() {
   const [editDataVenda, setEditDataVenda] = useState("");
   const [editItens, setEditItens] = useState([]);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+
+  // Seleção Múltipla
+  const [vendasSelecionadas, setVendasSelecionadas] = useState([]);
 
   // Se não for admin ou gerente, nega acesso
   const isAdmin =
@@ -136,12 +142,40 @@ export default function HistoricoVendas() {
   };
 
   // Funções de Cancelamento
-  const handleCancelarVenda = (id) => {
+  const handleCancelarVenda = async (id) => {
     const confirmMessage =
       "Deseja realmente CANCELAR esta venda?\n\nIsso irá remover o registro e devolver os itens ao estoque central (ou carga de rua ativa do vendedor).";
-    if (window.confirm(confirmMessage)) {
-      cancelarVenda(id);
-      alert("Venda cancelada com sucesso!");
+    if (await confirm({ title: "Cancelar Venda", message: confirmMessage })) {
+      await cancelarVenda(id);
+      setVendasSelecionadas(prev => prev.filter(vid => vid !== id));
+      toast.success("Venda cancelada com sucesso!");
+    }
+  };
+
+  const handleCancelarSelecionadas = async () => {
+    if (vendasSelecionadas.length === 0) return;
+    const confirmMessage =
+      `Deseja realmente CANCELAR as ${vendasSelecionadas.length} vendas selecionadas?\n\nIsso irá remover os registros e devolver os itens ao estoque.`;
+    if (await confirm({ title: "Cancelar Vendas Múltiplas", message: confirmMessage })) {
+      for (const id of vendasSelecionadas) {
+        await cancelarVenda(id);
+      }
+      setVendasSelecionadas([]);
+      toast.success("Vendas canceladas com sucesso!");
+    }
+  };
+
+  const toggleSelectVenda = (id) => {
+    setVendasSelecionadas(prev =>
+      prev.includes(id) ? prev.filter(vid => vid !== id) : [...prev, id]
+    );
+  };
+
+  const toggleSelectAll = () => {
+    if (vendasSelecionadas.length === vendasFiltradas.length) {
+      setVendasSelecionadas([]);
+    } else {
+      setVendasSelecionadas(vendasFiltradas.map(v => v.id));
     }
   };
 
@@ -215,7 +249,7 @@ export default function HistoricoVendas() {
           if (item.produtoId === prodId) {
             const newQty = item.quantidade + delta;
             if (newQty > maxQty) {
-              alert(`Quantidade limite de estoque atingida! Máximo disponível: ${maxQty} unidades.`);
+              toast.error(`Quantidade limite de estoque atingida! Máximo disponível: ${maxQty} unidades.`);
               return item;
             }
             return { ...item, quantidade: newQty };
@@ -247,7 +281,7 @@ export default function HistoricoVendas() {
 
     const maxQty = getEstoqueDisponivelParaEdicao(prodId);
     if (maxQty <= 0) {
-      alert("Este produto não possui estoque disponível.");
+      toast.success("Este produto não possui estoque disponível.");
       return;
     }
 
@@ -273,17 +307,17 @@ export default function HistoricoVendas() {
     e.preventDefault();
 
     if (editItens.length === 0) {
-      alert("A venda deve possuir pelo menos um produto.");
+      toast.success("A venda deve possuir pelo menos um produto.");
       return;
     }
 
     if (editFormaPagamento === "Fiado" && !editClienteId) {
-      alert("Para vendas Fiadas, é obrigatório selecionar um cliente.");
+      toast.error("Para vendas Fiadas, é obrigatório selecionar um cliente.");
       return;
     }
 
     if (editFormaPagamento === "Fiado" && !editDataPagamento) {
-      alert("Para vendas Fiadas, informe o prazo de pagamento.");
+      toast.success("Para vendas Fiadas, informe o prazo de pagamento.");
       return;
     }
 
@@ -305,7 +339,7 @@ export default function HistoricoVendas() {
     editarVenda(vendaEditando.id, updatedData);
     setIsEditModalOpen(false);
     setVendaEditando(null);
-    alert("Venda editada e estoque atualizado com sucesso!");
+    toast.success("Venda editada e estoque atualizado com sucesso!");
   };
 
   // Estatísticas Rápidas
@@ -557,7 +591,32 @@ export default function HistoricoVendas() {
 
       {/* Lista de Vendas */}
       <div className="card">
-        <h3 style={{ fontSize: "18px", marginBottom: "16px" }}>Registros</h3>
+        <div className="flex-between mb-16" style={{ flexWrap: "wrap", gap: "12px" }}>
+          <h3 style={{ fontSize: "18px", margin: 0 }}>Registros</h3>
+          {vendasFiltradas.length > 0 && (
+            <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+              <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "14px", cursor: "pointer", userSelect: "none" }}>
+                <input
+                  type="checkbox"
+                  checked={vendasSelecionadas.length === vendasFiltradas.length && vendasFiltradas.length > 0}
+                  onChange={toggleSelectAll}
+                  style={{ width: "16px", height: "16px", cursor: "pointer" }}
+                />
+                Selecionar Todas
+              </label>
+              {vendasSelecionadas.length > 0 && (
+                <button
+                  className="btn btn-danger"
+                  style={{ padding: "6px 12px", fontSize: "13px", display: "flex", alignItems: "center", gap: "6px", borderRadius: "6px" }}
+                  onClick={handleCancelarSelecionadas}
+                  title="Cancelar vendas selecionadas"
+                >
+                  <Trash2 size={14} /> Cancelar ({vendasSelecionadas.length})
+                </button>
+              )}
+            </div>
+          )}
+        </div>
 
         {vendasFiltradas.length === 0 ? (
           <div style={{ textAlign: "center", padding: "40px 16px", color: "var(--text-secondary)" }}>
@@ -604,6 +663,13 @@ export default function HistoricoVendas() {
                   >
                     <div>
                       <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                        <input
+                          type="checkbox"
+                          checked={vendasSelecionadas.includes(venda.id)}
+                          onChange={() => toggleSelectVenda(venda.id)}
+                          style={{ width: "18px", height: "18px", cursor: "pointer", marginRight: "4px" }}
+                          title="Selecionar para cancelar"
+                        />
                         <strong style={{ fontSize: "15px" }}>{cliNome}</strong>
                         <span
                           className={`badge ${venda.tipoVenda === "Rua" ? "badge-success" : "badge-secondary"}`}

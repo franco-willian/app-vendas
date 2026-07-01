@@ -1,6 +1,7 @@
 import React, { useContext, useState, useEffect } from 'react';
 import { DatabaseContext } from '../context/DatabaseContext';
 import { ShoppingCart, ShoppingBag, Send, CheckCircle2, Search, ArrowRight, MessageCircle, Loader2, XCircle, AlertTriangle } from 'lucide-react';
+import { toast } from 'react-hot-toast';
 
 export default function LojaOnline() {
   const { produtos, registrarPedidoOnline, configuracoes, verifyMercadoPagoPayment } = useContext(DatabaseContext);
@@ -78,7 +79,7 @@ export default function LojaOnline() {
     const existing = cart.find(item => item.id === p.id);
     if (existing) {
       if (existing.quantidade >= p.estoque) {
-        alert("Desculpe, quantidade máxima em estoque atingida para este produto.");
+        toast.error("Desculpe, quantidade máxima em estoque atingida para este produto.");
         return;
       }
       setCart(prev => prev.map(item => 
@@ -103,7 +104,7 @@ export default function LojaOnline() {
   const handleSendOrder = async (e) => {
     e.preventDefault();
     if (!nome || !whatsapp) {
-      alert("Por favor, preencha o seu Nome e seu WhatsApp.");
+      toast.success("Por favor, preencha o seu Nome e seu WhatsApp.");
       return;
     }
 
@@ -163,7 +164,7 @@ export default function LojaOnline() {
       setIsRedirecting(false);
       
       if (pedido) {
-        alert(`Não foi possível iniciar o pagamento via Mercado Pago: ${err.message}. Seu pedido foi registrado e você pode combinar o pagamento diretamente com o vendedor.`);
+        toast.error(`Não foi possível iniciar o pagamento via Mercado Pago: ${err.message}. Seu pedido foi registrado e você pode combinar o pagamento diretamente com o vendedor.`);
         setSuccessPedido(pedido);
         setCart([]);
         setShowCheckout(false);
@@ -171,7 +172,7 @@ export default function LojaOnline() {
         setWhatsapp('');
         setEmail('');
       } else {
-        alert(`Ocorreu um erro ao registrar seu pedido: ${err.message}. Por favor, tente novamente.`);
+        toast.error(`Ocorreu um erro ao registrar seu pedido: ${err.message}. Por favor, tente novamente.`);
       }
     }
   };

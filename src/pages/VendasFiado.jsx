@@ -1,8 +1,11 @@
 import React, { useContext, useState } from 'react';
 import { DatabaseContext } from '../context/DatabaseContext';
 import { DollarSign, CheckCircle2, User, Search, MapPin } from 'lucide-react';
+import { toast } from 'react-hot-toast';
+import { useConfirm } from '../context/ConfirmContext';
 
 export default function VendasFiado() {
+  const { confirm } = useConfirm();
   const { vendas, clientes, quitarVendaFiado, currentUser } = useContext(DatabaseContext);
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -44,10 +47,10 @@ export default function VendasFiado() {
     return acc;
   }, {});
 
-  const handleQuitar = (vendaId) => {
-    if (window.confirm("Tem certeza que deseja marcar esta venda como PAGA? Isso baixará a dívida do cliente.")) {
+  const handleQuitar = async (vendaId) => {
+    if (await confirm({ title: "Quitar Venda", message: "Tem certeza que deseja marcar esta venda como PAGA? Isso baixará a dívida do cliente." })) {
       quitarVendaFiado(vendaId);
-      alert("Venda quitada com sucesso!");
+      toast.success("Venda quitada com sucesso!");
     }
   };
 

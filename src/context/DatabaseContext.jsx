@@ -1,4 +1,6 @@
 import React, { createContext, useState, useEffect, useRef } from "react";
+import { toast } from 'react-hot-toast';
+import { useConfirm } from './ConfirmContext';
 
 export const DatabaseContext = createContext();
 
@@ -89,6 +91,7 @@ const INITIAL_USERS = [
 ];
 
 export const DatabaseProvider = ({ children }) => {
+  const { confirm } = useConfirm();
   const [produtos, setProdutos] = useState(() => {
     const saved = localStorage.getItem("vendas_produtos");
     return saved ? JSON.parse(saved) : INITIAL_PRODUCTS;
@@ -181,16 +184,14 @@ export const DatabaseProvider = ({ children }) => {
     }
   };
 
-  const handleManualWhatsAppNotify = (message) => {
+  const handleManualWhatsAppNotify = async (message) => {
     const phone = configuracoes.gerenteWhatsApp;
     const apikey = configuracoes.callMeBotApiKey;
     if (phone && !apikey) {
       const cleanPhone = phone.replace(/\D/g, "");
       const url = `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(message)}`;
       if (
-        window.confirm(
-          `Gostaria de enviar uma notificação ao gerente via WhatsApp?\n\nMensagem:\n${message}`,
-        )
+        await confirm({ title: "Notificar Gerente", message: `Gostaria de enviar uma notificação ao gerente via WhatsApp?\n\nMensagem:\n${message}` })
       ) {
         window.open(url, "_blank");
       }
@@ -434,6 +435,23 @@ export const DatabaseProvider = ({ children }) => {
     }
   };
 
+  const editarDespesa = async (id, novosDados) => {
+    setDespesas((prev) =>
+      prev.map((d) => (d.id === id ? { ...d, ...novosDados } : d))
+    );
+    if (!offlineMode) {
+      try {
+        await fetch(`/api/despesas/${id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(novosDados),
+        });
+      } catch (err) {
+        console.error("Erro ao editar despesa:", err);
+      }
+    }
+  };
+
   const logoutUser = () => {
     setCurrentUser(null);
   };
@@ -579,7 +597,7 @@ export const DatabaseProvider = ({ children }) => {
 
   const deleteUsuario = (id) => {
     if (id === "1") {
-      alert("Não é permitido excluir o Administrador principal.");
+      toast.success("Não é permitido excluir o Administrador principal.");
       return;
     }
 
@@ -1124,7 +1142,7 @@ export const DatabaseProvider = ({ children }) => {
           setVendas((prev) => prev.map((v) => ({ ...v, synced: true })));
           setOfflineMode(false);
           loadDataFromBackend();
-          alert("Vendas offline sincronizadas com sucesso no servidor!");
+          toast.success("Vendas offline sincronizadas com sucesso no servidor!");
         }
       })
       .catch((err) => {
@@ -1162,7 +1180,7 @@ export const DatabaseProvider = ({ children }) => {
           setPedidosOnline(result.data.pedidosOnline);
           setUsuarios(result.data.usuarios);
 
-          alert("Banco de dados zerado com sucesso!");
+          toast.success("Banco de dados zerado com sucesso!");
         })
         .catch((err) => {
           console.error(err);
@@ -1188,7 +1206,7 @@ export const DatabaseProvider = ({ children }) => {
       setPedidosOnline([]);
       setUsuarios(INITIAL_USERS);
 
-      alert("Dados locais zerados com sucesso (Modo Offline)!");
+      toast.success("Dados locais zerados com sucesso (Modo Offline)!");
     }
   };
 
@@ -1249,6 +1267,7 @@ export const DatabaseProvider = ({ children }) => {
         editarPedidoOnline,
         excluirPedidoOnline,
         adicionarDespesa,
+        editarDespesa,
         excluirDespesa,
         sincronizarVendasOffline,
         resetDatabase,

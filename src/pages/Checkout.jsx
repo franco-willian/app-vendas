@@ -1,6 +1,7 @@
 import React, { useContext, useState } from 'react';
 import { DatabaseContext } from '../context/DatabaseContext';
 import { Plus, Minus, ShoppingCart, UserPlus, Search, CheckCircle } from 'lucide-react';
+import { toast } from 'react-hot-toast';
 
 export default function Checkout() {
   const { 
@@ -61,7 +62,7 @@ export default function Checkout() {
 
     if (existing) {
       if (existing.quantidade >= estoqueDisponivel) {
-        alert("Quantidade máxima disponível atingida!");
+        toast.error("Quantidade máxima disponível atingida!");
         return;
       }
       setCart(prev => prev.map(item => 
@@ -71,7 +72,7 @@ export default function Checkout() {
       ));
     } else {
       if (estoqueDisponivel <= 0) {
-        alert("Produto esgotado!");
+        toast.error("Produto esgotado!");
         return;
       }
       setCart(prev => [...prev, { 
@@ -95,7 +96,7 @@ export default function Checkout() {
   const handleQuickClientSubmit = (e) => {
     e.preventDefault();
     if (!newCliNome || !newCliWhatsapp) {
-      alert("Nome e WhatsApp são obrigatórios.");
+      toast.error("Nome e WhatsApp são obrigatórios.");
       return;
     }
 
@@ -117,17 +118,17 @@ export default function Checkout() {
 
   const handleFinalize = () => {
     if (cart.length === 0) {
-      alert("Adicione pelo menos um produto ao carrinho.");
+      toast.success("Adicione pelo menos um produto ao carrinho.");
       return;
     }
 
     if (formaPagamento === 'Fiado' && !dataPagamentoFiado) {
-      alert("Por favor, informe a data de pagamento (prazo) para a venda a fiado.");
+      toast.success("Por favor, informe a data de pagamento (prazo) para a venda a fiado.");
       return;
     }
 
     if (formaPagamento === 'Fiado' && !selectedClienteId) {
-      alert("Para vendas a fiado, é obrigatório selecionar ou cadastrar um cliente.");
+      toast.error("Para vendas a fiado, é obrigatório selecionar ou cadastrar um cliente.");
       return;
     }
 

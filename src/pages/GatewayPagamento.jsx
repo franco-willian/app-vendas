@@ -1,6 +1,7 @@
 import React, { useContext, useState, useEffect } from 'react';
 import { DatabaseContext } from '../context/DatabaseContext';
 import { CreditCard, Eye, EyeOff } from 'lucide-react';
+import { toast } from 'react-hot-toast';
 
 export default function GatewayPagamento() {
   const { 
@@ -24,7 +25,7 @@ export default function GatewayPagamento() {
       ...configuracoes,
       mercadoPagoAccessToken
     });
-    alert("Token do Mercado Pago salvo com sucesso!");
+    toast.success("Token do Mercado Pago salvo com sucesso!");
   };
 
   const isAdmin = currentUser && (currentUser.tipo === 'admin-vendedor' || currentUser.tipo === 'gerente' || currentUser.tipo === 'admin');

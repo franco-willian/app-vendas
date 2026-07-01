@@ -1,8 +1,11 @@
 import React, { useContext, useState } from "react";
 import { DatabaseContext } from "../context/DatabaseContext";
 import { Plus, Trash2, Shield, User, Edit } from "lucide-react";
+import { toast } from 'react-hot-toast';
+import { useConfirm } from '../context/ConfirmContext';
 
 export default function Usuarios() {
+  const { confirm } = useConfirm();
   const { usuarios, addUsuario, updateUsuario, deleteUsuario, currentUser } =
     useContext(DatabaseContext);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -18,7 +21,7 @@ export default function Usuarios() {
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!nome || !usuario || (!senha && !editingUserId)) {
-      alert("Por favor, preencha todos os campos obrigatórios (*).");
+      toast.error("Por favor, preencha todos os campos obrigatórios (*).");
       return;
     }
 
@@ -30,7 +33,7 @@ export default function Usuarios() {
           u.id !== editingUserId,
       );
       if (usernameTaken) {
-        alert("Este nome de usuário já está sendo utilizado.");
+        toast.error("Este nome de usuário já está sendo utilizado.");
         return;
       }
 
@@ -38,19 +41,19 @@ export default function Usuarios() {
       if (senha) updatedData.senha = senha;
 
       updateUsuario(editingUserId, updatedData);
-      alert("Usuário atualizado com sucesso!");
+      toast.success("Usuário atualizado com sucesso!");
     } else {
       // Verificar se usuário já existe
       const usernameTaken = usuarios.some(
         (u) => u.usuario.toLowerCase() === usuario.toLowerCase(),
       );
       if (usernameTaken) {
-        alert("Este nome de usuário já está sendo utilizado.");
+        toast.error("Este nome de usuário já está sendo utilizado.");
         return;
       }
 
       addUsuario({ nome, usuario, senha, tipo });
-      alert("Usuário adicionado com sucesso!");
+      toast.success("Usuário adicionado com sucesso!");
     }
 
     // Reset Form
@@ -71,15 +74,16 @@ export default function Usuarios() {
     setIsModalOpen(true);
   };
 
-  const handleDelete = (id, name) => {
+  const handleDelete = async (id, name) => {
     if (id === currentUser.id) {
-      alert(
-        "Você não pode excluir sua própria conta enquanto estiver conectado.",
+      toast.error(
+        "Você não pode excluir sua própria conta enquanto estiver conectado."
       );
       return;
     }
-    if (window.confirm(`Deseja excluir o usuário "${name}"?`)) {
+    if (await confirm({ title: "Excluir Usuário", message: `Deseja excluir o usuário "${name}"?` })) {
       deleteUsuario(id);
+      toast.success("Usuário excluído com sucesso!");
     }
   };
 

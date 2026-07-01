@@ -1,6 +1,7 @@
 import React, { useContext, useState } from 'react';
 import { DatabaseContext } from '../context/DatabaseContext';
 import { Play, ClipboardCheck, ArrowLeftRight, CheckSquare, Plus, Minus } from 'lucide-react';
+import { toast } from 'react-hot-toast';
 
 export default function CargaDiaria() {
   const { produtos, activeCargas, usuarios, startCarga, returnCarga, handleManualWhatsAppNotify, currentUser, configuracoes } = useContext(DatabaseContext);
@@ -45,7 +46,7 @@ export default function CargaDiaria() {
     });
 
     if (!hasItems) {
-      alert("Por favor, selecione pelo menos 1 item com quantidade maior que 0 para sair.");
+      toast.success("Por favor, selecione pelo menos 1 item com quantidade maior que 0 para sair.");
       return;
     }
 
@@ -113,7 +114,7 @@ export default function CargaDiaria() {
     }
 
     setQuantidadesRetorno({});
-    alert("Carga diária finalizada! As sobras foram devolvidas ao estoque central com sucesso.");
+    toast.success("Carga diária finalizada! As sobras foram devolvidas ao estoque central com sucesso.");
   };
 
   const setAllDefaultRetornos = () => {

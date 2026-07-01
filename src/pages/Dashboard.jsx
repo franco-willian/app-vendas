@@ -1,5 +1,7 @@
 import React, { useContext } from "react";
 import { DatabaseContext } from "../context/DatabaseContext";
+import { toast } from 'react-hot-toast';
+import { useConfirm } from '../context/ConfirmContext';
 import {
   DollarSign,
   ShoppingBag,
@@ -13,6 +15,7 @@ import {
 } from "lucide-react";
 
 export default function Dashboard() {
+  const { confirm } = useConfirm();
   const {
     vendas,
     despesas,
@@ -119,7 +122,7 @@ export default function Dashboard() {
     .reduce((acc, v) => acc + v.total, 0);
 
   // Breakdown de Formas de Pagamento
-  const pagamentos = validVendasForRevenue.reduce(
+  const pagamentos = vendas.reduce(
     (acc, v) => {
       acc[v.formaPagamento] = (acc[v.formaPagamento] || 0) + v.total;
       return acc;
@@ -142,7 +145,7 @@ export default function Dashboard() {
       navigator.clipboard
         .writeText(link)
         .then(() =>
-          alert("Link da loja online copiado para a área de transferência!"),
+          toast.success("Link da loja online copiado para a área de transferência!"),
         )
         .catch(() => fallbackCopyText(link));
     } else {
@@ -170,7 +173,7 @@ export default function Dashboard() {
     try {
       const successful = document.execCommand("copy");
       if (successful) {
-        alert("Link da loja online copiado para a área de transferência!");
+        toast.success("Link da loja online copiado para a área de transferência!");
       } else {
         alert(
           "Não foi possível copiar automaticamente. Selecione e copie o texto manualmente.",
@@ -212,11 +215,9 @@ export default function Dashboard() {
           {currentUser && (currentUser.tipo === "admin" || currentUser.usuario === "admin") && (
             <button
               className="btn btn-danger"
-              onClick={() => {
+              onClick={async () => {
                 if (
-                  window.confirm(
-                    "Tem certeza que deseja zerar todas as vendas e redefinir o estoque do banco de dados para os valores originais?",
-                  )
+                  await confirm({ title: "Zerar Banco de Dados", message: "Tem certeza que deseja zerar todas as vendas e redefinir o estoque do banco de dados para os valores originais?" })
                 ) {
                   resetDatabase();
                 }
@@ -755,22 +756,24 @@ export default function Dashboard() {
           <div
             style={{ display: "flex", flexDirection: "column", gap: "16px" }}
           >
-            {Object.entries(pagamentos).map(([forma, valor]) => {
-              const porcentagem =
-                faturamentoGeral > 0 ? (valor / faturamentoGeral) * 100 : 0;
-              return (
-                <div key={forma}>
-                  <div
-                    className="flex-between mb-8"
-                    style={{ flexWrap: "wrap", gap: "8px" }}
-                  >
-                    <span style={{ fontWeight: 500, fontSize: "15px" }}>
-                      {forma}
-                    </span>
-                    <span style={{ fontWeight: 600, fontSize: "15px" }}>
-                      R$ {valor.toFixed(2)} ({porcentagem.toFixed(0)}%)
-                    </span>
-                  </div>
+            {(() => {
+              const totalPagamentos = Object.values(pagamentos).reduce((acc, curr) => acc + curr, 0);
+              return Object.entries(pagamentos).map(([forma, valor]) => {
+                const porcentagem =
+                  totalPagamentos > 0 ? (valor / totalPagamentos) * 100 : 0;
+                return (
+                  <div key={forma}>
+                    <div
+                      className="flex-between mb-8"
+                      style={{ flexWrap: "wrap", gap: "8px" }}
+                    >
+                      <span style={{ fontWeight: 500, fontSize: "15px" }}>
+                        {forma}
+                      </span>
+                      <span style={{ fontWeight: 600, fontSize: "15px" }}>
+                        R$ {valor.toFixed(2)} ({porcentagem.toFixed(0)}%)
+                      </span>
+                    </div>
                   <div
                     style={{
                       height: "8px",
@@ -797,7 +800,7 @@ export default function Dashboard() {
                   </div>
                 </div>
               );
-            })}
+            })})()}
           </div>
         </div>
 

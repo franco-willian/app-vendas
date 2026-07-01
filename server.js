@@ -4,6 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import https from 'https';
+import cron from 'node-cron';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -112,48 +113,101 @@ const writeDB = (data) => {
   fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), 'utf-8');
 };
 
-const sendWhatsAppAlert = (db, message) => {
-  const config = db.configuracoes || {};
-  const phone = config.gerenteWhatsApp;
-  
-  // Detect provider (default to callmebot)
-  const provider = config.whatsappProvider || 'callmebot';
-  const callMeBotKey = config.callMeBotApiKey;
-  const textMeBotKey = config.textMeBotApiKey;
+let messageQueue = [];
+let isProcessingQueue = false;
 
-  if (!phone) {
-    console.log("[WhatsApp Alert] WhatsApp number not configured. Skipping alert.");
+const executeWhatsAppAlert = async (config, phone, message) => {
+  if (!phone) return;
+
+  const body = JSON.stringify({ to: phone, message: message });
+
+  try {
+    const res = await fetch('http://localhost:3002/send', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: body
+    });
+    const data = await res.json();
+    console.log(`[WhatsApp Alert - Local] Response to ${phone}:`, data);
+  } catch (err) {
+    console.error(`[WhatsApp Alert Error - Local] Failed to send to ${phone}:`, err.message);
+  }
+};
+
+const processQueue = () => {
+  if (messageQueue.length === 0) {
+    isProcessingQueue = false;
     return;
   }
+  isProcessingQueue = true;
+  const { config, phone, message } = messageQueue.shift();
+  
+  executeWhatsAppAlert(config, phone, message);
 
-  const encodedText = encodeURIComponent(message);
-  let url = '';
+  setTimeout(processQueue, 10000); // 10 seconds delay
+};
 
-  if (provider === 'textmebot') {
-    if (!textMeBotKey) {
-      console.log("[WhatsApp Alert] TextMeBot API Key not configured. Skipping.");
-      return;
-    }
-    url = `https://api.textmebot.com/send.php?recipient=${phone}&apikey=${textMeBotKey}&text=${encodedText}`;
-  } else {
-    if (!callMeBotKey) {
-      console.log("[WhatsApp Alert] CallMeBot API Key not configured. Skipping.");
-      return;
-    }
-    url = `https://api.callmebot.com/whatsapp.php?phone=${phone}&text=${encodedText}&apikey=${callMeBotKey}`;
+const queueWhatsAppAlert = (config, phone, message) => {
+  if (!phone) return;
+  messageQueue.push({ config, phone, message });
+  if (!isProcessingQueue) {
+    processQueue();
+  }
+};
+
+const routeAndQueueEvent = (db, eventType, message, context = {}) => {
+  const config = db.configuracoes || {};
+  
+  const destDonuts = config.grupoDonuts;
+  const destBolo = config.grupoBolo;
+  const destBrownie = config.grupoBrownie;
+  const destCaixa = config.grupoCaixa;
+  const destLoja = config.grupoLojaOnline;
+
+  let targets = new Set();
+
+  if (eventType === 'VENDA' && context.itens) {
+    let hasDonuts = false;
+    let hasBolo = false;
+    let hasBrownie = false;
+
+    context.itens.forEach(item => {
+      let nome = (item.nome || '').toLowerCase();
+      if (!nome && item.produtoId) {
+        const prod = db.produtos.find(p => p.id === item.produtoId);
+        if (prod) nome = prod.nome.toLowerCase();
+      }
+      if (nome.includes('donuts')) hasDonuts = true;
+      if (nome.includes('bolo')) hasBolo = true;
+      if (nome.includes('brownie')) hasBrownie = true;
+    });
+
+    if (hasDonuts && destDonuts) targets.add(destDonuts);
+    if (hasBolo && destBolo) targets.add(destBolo);
+    if (hasBrownie && destBrownie) targets.add(destBrownie);
+
+  } else if (eventType === 'CAIXA' || eventType === 'CARGA') {
+    if (destCaixa) targets.add(destCaixa);
+  } else if (eventType === 'LOJA') {
+    if (destLoja) targets.add(destLoja);
   }
 
-  const httpModule = url.startsWith('https') ? https : require('http');
+  // Se for teste manual de rota
+  if (eventType === 'TEST') {
+    if (context.phone) targets.add(context.phone);
+  }
 
-  httpModule.get(url, (res) => {
-    let data = '';
-    res.on('data', (chunk) => { data += chunk; });
-    res.on('end', () => {
-      console.log(`[WhatsApp Alert - ${provider}] Response: ${data}`);
-    });
-  }).on('error', (err) => {
-    console.error(`[WhatsApp Alert Error - ${provider}] Failed to send WhatsApp:`, err.message);
+  // Disparar para todos os alvos identificados
+  targets.forEach(phone => {
+    queueWhatsAppAlert(config, phone, message);
   });
+};
+
+// Placeholder for old sendWhatsAppAlert compatibility, mapping to 'CAIXA' mostly if not known.
+const sendWhatsAppAlert = (db, message, eventType = 'CAIXA', context = {}) => {
+  routeAndQueueEvent(db, eventType, message, context);
 };
 
 // --- API ENDPOINTS ---
@@ -259,9 +313,24 @@ app.post('/api/despesas', (req, res) => {
   res.json(novaDespesa);
 });
 
+app.put('/api/despesas/:id', (req, res) => {
+  const db = readDB();
+  const id = req.params.id;
+  if (!db.despesas) db.despesas = [];
+  
+  const index = db.despesas.findIndex(d => d.id === id);
+  if (index !== -1) {
+    db.despesas[index] = { ...db.despesas[index], ...req.body };
+    writeDB(db);
+    res.json(db.despesas[index]);
+  } else {
+    res.status(404).json({ error: "Despesa não encontrada" });
+  }
+});
+
 app.delete('/api/despesas/:id', (req, res) => {
   const db = readDB();
-  const { id } = req.params;
+  const id = req.params.id;
   if (!db.despesas) db.despesas = [];
   db.despesas = db.despesas.filter(d => d.id !== id);
   writeDB(db);
@@ -312,16 +381,53 @@ app.post('/api/configuracoes', (req, res) => {
   res.json({ success: true });
 });
 
+// Proxy para Microsserviço WhatsApp
+app.get('/api/whatsapp/status', async (req, res) => {
+  try {
+    const response = await fetch('http://localhost:3002/status');
+    const data = await response.json();
+    res.json(data);
+  } catch (err) {
+    res.json({ connected: false, error: 'Microsserviço offline' });
+  }
+});
+
+app.get('/api/whatsapp/qr', async (req, res) => {
+  try {
+    const response = await fetch('http://localhost:3002/qr');
+    const data = await response.json();
+    res.json(data);
+  } catch (err) {
+    res.json({ qr: '' });
+  }
+});
+
+app.get('/api/whatsapp/groups', async (req, res) => {
+  try {
+    const response = await fetch('http://localhost:3002/groups');
+    const data = await response.json();
+    res.json(data);
+  } catch (err) {
+    res.json({ groups: [] });
+  }
+});
+
 // Testar Notificação do WhatsApp
 app.post('/api/whatsapp/test', (req, res) => {
   const db = readDB();
-  const { gerenteWhatsApp, callMeBotApiKey, textMeBotApiKey, whatsappProvider } = req.body;
+  const { grupoDonuts, grupoBolo, grupoBrownie, grupoCaixa, grupoLojaOnline } = req.body;
   const tempDB = {
     ...db,
-    configuracoes: { gerenteWhatsApp, callMeBotApiKey, textMeBotApiKey, whatsappProvider }
+    configuracoes: { grupoDonuts, grupoBolo, grupoBrownie, grupoCaixa, grupoLojaOnline }
   };
-  const testMsg = `🔔 *Teste de Conexão do VendaRápida!*\nSeu WhatsApp foi configurado e está pronto para receber notificações de vendas e caixa via ${whatsappProvider === 'textmebot' ? 'TextMeBot' : 'CallMeBot'}!`;
-  sendWhatsAppAlert(tempDB, testMsg);
+  const testMsg = `🔔 *Teste de Conexão do VendaRápida!*\nO sistema de envio Nativo Local está funcionando!`;
+  
+  if (grupoCaixa) sendWhatsAppAlert(tempDB, testMsg + " (Relatório de Caixa)", 'CAIXA');
+  if (grupoLojaOnline) sendWhatsAppAlert(tempDB, testMsg + " (Pedidos Loja Online)", 'LOJA');
+  if (grupoDonuts) sendWhatsAppAlert(tempDB, testMsg + " (Vendas Donuts)", 'TEST', { phone: grupoDonuts });
+  if (grupoBolo) sendWhatsAppAlert(tempDB, testMsg + " (Vendas Bolo)", 'TEST', { phone: grupoBolo });
+  if (grupoBrownie) sendWhatsAppAlert(tempDB, testMsg + " (Vendas Brownie)", 'TEST', { phone: grupoBrownie });
+
   res.json({ success: true });
 });
 
@@ -370,8 +476,8 @@ app.post('/api/carga/start', (req, res) => {
       const user = db.usuarios.find(u => u.usuario === vendedor);
       const nomeVendedor = user ? user.nome : vendedor;
       const itensList = activeCarga.itens.map(i => `- ${i.nome}: ${i.quantidadeSaida} un`).join('\n');
-      const alertMsg = `🚚 *Nova Saída para a Rua!*\n👤 Vendedor: ${nomeVendedor}\n📦 Itens retirados:\n${itensList}`;
-      sendWhatsAppAlert(db, alertMsg);
+      const alertMsg = `🚚 *Nova Saída para a Rua!*\n👤 Vendedor: ${vendedor}\n📦 Itens retirados:\n${itensList}`;
+      sendWhatsAppAlert(db, alertMsg, 'CARGA');
     }
   } catch (err) {
     console.error("Erro ao enviar notificação de carga start:", err);
@@ -423,12 +529,112 @@ app.post('/api/carga/return', (req, res) => {
       let alertMsg = `💰 *Fechamento de Caixa!*\n👤 Vendedor: ${nomeVendedor}\n`;
       
       if (notifyReturn) {
+        console.log("=== DEBUG FECHAMENTO CARGA ===");
+        console.log("vendedor username:", vendedor, "nomeVendedor:", nomeVendedor);
+        console.log("sellerCarga.data:", sellerCarga.data);
+        // Calcular valores exatos das vendas feitas durante a carga
+        const vendasDaCarga = db.vendas.filter(v => {
+          if (v.cargaId && v.cargaId === sellerCarga.id) return true;
+          
+          const matchVendedor = (v.vendedor === vendedor || v.vendedor === nomeVendedor);
+          // Adiciona uma tolerância de 2 minutos para caso a venda e a carga sejam criadas quase juntas
+          const cargaDataMinusTolerance = new Date(new Date(sellerCarga.data).getTime() - 2 * 60000);
+          const matchData = new Date(v.data) >= cargaDataMinusTolerance;
+          
+          return matchVendedor && matchData;
+        });
+        
+        let totalGeral = 0;
+        let totalDescontosGlobais = 0;
+        const totalPorForma = { Pix: 0, Dinheiro: 0, Cartão: 0, Fiado: 0 };
+        const statsProduto = {};
+        
+        vendasDaCarga.forEach(venda => {
+          const forma = venda.formaPagamento || 'Outros';
+          totalGeral += venda.total;
+          
+          const descVenda = parseFloat(venda.desconto) || 0;
+          totalDescontosGlobais += descVenda;
+          const somaItens = venda.itens.reduce((acc, it) => acc + (it.quantidade * it.precoUnitario), 0);
+          
+          if (totalPorForma[forma] !== undefined) {
+             totalPorForma[forma] += venda.total;
+          } else {
+             totalPorForma[forma] = venda.total;
+          }
+          
+          venda.itens.forEach(it => {
+            if (!statsProduto[it.produtoId]) {
+              statsProduto[it.produtoId] = { totalValor: 0, totalDesc: 0, formas: {} };
+            }
+            const valorBrutoItem = (it.quantidade * it.precoUnitario);
+            let descItem = 0;
+            if (descVenda > 0 && somaItens > 0) {
+               descItem = descVenda * (valorBrutoItem / somaItens);
+            }
+            const valorLiquidoItem = valorBrutoItem - descItem;
+
+            statsProduto[it.produtoId].totalValor += valorLiquidoItem;
+            statsProduto[it.produtoId].totalDesc += descItem;
+            
+            if (!statsProduto[it.produtoId].formas[forma]) {
+               statsProduto[it.produtoId].formas[forma] = { qtd: 0, valor: 0 };
+            }
+            statsProduto[it.produtoId].formas[forma].qtd += it.quantidade;
+            statsProduto[it.produtoId].formas[forma].valor += valorLiquidoItem;
+          });
+        });
+
         const summaryList = sellerCarga.itens.map(item => {
           const returned = parseInt(itensRetorno[item.produtoId]) || 0;
           const sold = item.quantidadeVendida;
-          return `- ${item.nome}:\n  Saída: ${item.quantidadeSaida} | Vendas: ${sold} | Retorno: ${returned}`;
-        }).join('\n');
-        alertMsg += `📊 *Resumo da Carga:*\n${summaryList}\n`;
+          const stats = statsProduto[item.produtoId] || { totalValor: 0, totalDesc: 0, formas: {} };
+          
+          const descStr = stats.totalDesc > 0 ? ` (Teve R$ ${stats.totalDesc.toFixed(2)} de Desconto)` : '';
+          let str = `- *${item.nome}*:\n  Saída: ${item.quantidadeSaida} | Retorno: ${returned}\n  Vendas: ${sold} un (R$ ${stats.totalValor.toFixed(2)})${descStr}`;
+          
+          // Detalhar formas de pagamento
+          const formasStr = Object.entries(stats.formas).map(([f, d]) => {
+             return `    ↳ ${f}: ${d.qtd} un (R$ ${d.valor.toFixed(2)})`;
+          }).join('\n');
+          
+          if (formasStr) {
+             str += `\n${formasStr}`;
+          }
+          return str;
+        }).join('\n\n');
+        
+        let totaisFormasStr = Object.entries(totalPorForma)
+           .filter(([_, val]) => val > 0)
+           .map(([f, val]) => `  ↳ ${f}: R$ ${val.toFixed(2)}`)
+           .join('\n');
+           
+        const rodapeDesconto = totalDescontosGlobais > 0 ? `\n🏷️ *Descontos Totais na Carga: R$ ${totalDescontosGlobais.toFixed(2)}*` : '';
+        
+        let detalhesVendasComDesconto = '';
+        const vendasComDesconto = vendasDaCarga.filter(v => (parseFloat(v.desconto) || 0) > 0);
+        if (vendasComDesconto.length > 0) {
+          detalhesVendasComDesconto = `\n✂️ *Detalhamento de Vendas com Desconto:*\n`;
+          vendasComDesconto.forEach(v => {
+            const clientObj = db.clientes.find(c => c.id === v.clienteId);
+            const clientName = clientObj ? clientObj.nome : 'Cliente Não Identificado';
+            
+            // Resolve item names gracefully
+            const itensList = v.itens.map(i => {
+               let n = i.nome;
+               if (!n && i.produtoId) {
+                  const p = db.produtos.find(prod => prod.id === i.produtoId);
+                  if (p) n = p.nome;
+               }
+               return `  - ${i.quantidade}x ${n || 'Produto'} (R$ ${(i.quantidade * i.precoUnitario).toFixed(2)})`;
+            }).join('\n');
+            
+            const desc = parseFloat(v.desconto).toFixed(2);
+            detalhesVendasComDesconto += `👤 Cliente: ${clientName}\n💳 Forma: ${v.formaPagamento}\n💵 Total Pago: R$ ${v.total.toFixed(2)}\n🏷️ Desconto: R$ ${desc}\n📦 Itens:\n${itensList}\n\n`;
+          });
+        }
+        
+        alertMsg += `📊 *Resumo da Carga:*\n${summaryList}\n\n💵 *Total Faturado: R$ ${totalGeral.toFixed(2)}*\n${totaisFormasStr}${rodapeDesconto}\n${detalhesVendasComDesconto}`;
       }
       
       if (notifyEstoque) {
@@ -442,7 +648,7 @@ app.post('/api/carga/return', (req, res) => {
         alertMsg += estoqueList;
       }
       
-      sendWhatsAppAlert(db, alertMsg);
+      sendWhatsAppAlert(db, alertMsg, 'CARGA');
     }
   } catch (err) {
     console.error("Erro ao enviar notificação de fechamento de caixa:", err);
@@ -525,6 +731,11 @@ app.post('/api/vendas', (req, res) => {
 
   const total = req.body.total !== undefined ? req.body.total : itens.reduce((acc, item) => acc + (item.quantidade * item.precoUnitario), 0);
 
+  // Encontrar se o vendedor tem carga ativa no momento da venda
+  const vendedorUser = db.usuarios.find(u => u.nome === (vendedor || ''));
+  const userKey = vendedorUser ? vendedorUser.usuario : 'vendedor';
+  const sellerCarga = db.activeCargas ? db.activeCargas[userKey] : null;
+
   const novaVenda = {
     id: Date.now().toString(),
     clienteId,
@@ -533,11 +744,12 @@ app.post('/api/vendas', (req, res) => {
     dataPagamento,
     statusPagamento: formaPagamento === 'Fiado' ? 'pendente' : 'pago',
     tipoVenda, // 'Rua' ou 'Online'
-    total,
-    desconto: desconto || 0,
+    total: parseFloat(total),
+    desconto: parseFloat(desconto) || 0,
     data: data || new Date().toISOString(),
     synced: true,
-    vendedor: vendedor || 'Cliente Online'
+    vendedor: vendedor || 'Cliente Online',
+    cargaId: (tipoVenda === 'Rua' && sellerCarga) ? sellerCarga.id : null
   };
 
   db.vendas.unshift(novaVenda);
@@ -548,20 +760,25 @@ app.post('/api/vendas', (req, res) => {
     if (config.notifyVendas !== false) {
       const clientObj = db.clientes.find(c => c.id === clienteId);
       const clientName = clientObj ? clientObj.nome : 'Cliente Não Identificado';
-      const itensList = itens.map(i => `- ${i.nome}: ${i.quantidade}x R$ ${i.precoUnitario.toFixed(2)}`).join('\n');
-      const alertMsg = `🛍️ *Nova Venda Realizada!*\n👤 Vendedor: ${vendedor || 'Cliente Online'}\n👤 Cliente: ${clientName}\n💳 Pagamento: ${formaPagamento}\n📍 Tipo: ${tipoVenda}\n💵 Total: R$ ${total.toFixed(2)}\n📦 Itens:\n${itensList}`;
-      sendWhatsAppAlert(db, alertMsg);
+      
+      const itensList = itens.map(i => {
+         let n = i.nome;
+         if (!n && i.produtoId) {
+            const p = db.produtos.find(prod => prod.id === i.produtoId);
+            if (p) n = p.nome;
+         }
+         return `- ${n || 'Produto'}: ${i.quantidade}x R$ ${i.precoUnitario.toFixed(2)}`;
+      }).join('\n');
+      
+      const descText = (parseFloat(desconto) || 0) > 0 ? `\n🏷️ Desconto: R$ ${parseFloat(desconto).toFixed(2)}` : '';
+      const alertMsg = `🛍️ *Nova Venda Realizada!*\n👤 Vendedor: ${vendedor || 'Cliente Online'}\n📝 Cliente: ${clientName}\n💳 Pagamento: ${formaPagamento}\n🏷️ Tipo: ${tipoVenda}\n💲 Total: R$ ${total.toFixed(2)}${descText}\n📦 Itens:\n${itensList}`;
+      sendWhatsAppAlert(db, alertMsg, 'VENDA', { itens });
     }
   } catch (err) {
     console.error("Erro ao enviar notificação de nova venda:", err);
   }
 
   // Se for venda de rua e tiver carga ativa, atualizar as quantidades vendidas na carga ativa do vendedor
-  const vendedorUser = db.usuarios.find(u => u.nome === (vendedor || ''));
-  const userKey = vendedorUser ? vendedorUser.usuario : 'vendedor';
-  if (!db.activeCargas) db.activeCargas = {};
-  const sellerCarga = db.activeCargas[userKey];
-
   if (tipoVenda === 'Rua' && sellerCarga) {
     sellerCarga.itens = sellerCarga.itens.map(item => {
       const itemVendido = itens.find(iv => iv.produtoId === item.produtoId);
@@ -696,8 +913,8 @@ app.post('/api/sync', (req, res) => {
         const clientObj = db.clientes.find(c => c.id === venda.clienteId);
         const clientName = clientObj ? clientObj.nome : 'Cliente Não Identificado';
         const itensList = venda.itens.map(i => `- ${i.nome}: ${i.quantidade}x R$ ${i.precoUnitario.toFixed(2)}`).join('\n');
-        const alertMsg = `🛍️ *Nova Venda Realizada (Sincronizada)!*\n👤 Vendedor: ${venda.vendedor || 'Sem Vendedor'}\n👤 Cliente: ${clientName}\n💳 Pagamento: ${venda.formaPagamento}\n📍 Tipo: ${venda.tipoVenda}\n💵 Total: R$ ${total.toFixed(2)}\n📦 Itens:\n${itensList}`;
-        sendWhatsAppAlert(db, alertMsg);
+        const alertMsg = `🛍️ *Nova Venda Realizada (Sincronizada)!*\n👤 Vendedor: ${venda.vendedor || 'Sem Vendedor'}\n📝 Cliente: ${clientName}\n💳 Pagamento: ${venda.formaPagamento}\n🏷️ Tipo: ${venda.tipoVenda}\n💲 Total: R$ ${total.toFixed(2)}\n📦 Itens:\n${itensList}`;
+        sendWhatsAppAlert(db, alertMsg, 'VENDA', { itens: venda.itens });
       }
     } catch (err) {
       console.error("Erro ao enviar notificação de venda sincronizada:", err);
@@ -744,7 +961,10 @@ app.post('/api/pedidos-online', (req, res) => {
 
   // Criar ou localizar cliente
   let cliente = db.clientes.find(c => c.whatsapp === clienteData.whatsapp);
-  if (!cliente) {
+  if (cliente) {
+    if (clienteData.nome) cliente.nome = clienteData.nome;
+    if (clienteData.email) cliente.email = clienteData.email;
+  } else {
     cliente = {
       id: Date.now().toString(),
       ...clienteData
@@ -777,7 +997,7 @@ app.post('/api/pedidos-online', (req, res) => {
     if (config.notifyVendas !== false) {
       const itensList = novoPedido.itens.map(i => `- ${i.nome}: ${i.quantidade}x R$ ${i.precoUnitario.toFixed(2)}`).join('\n');
       const alertMsg = `🛒 *Novo Pedido Online Recebido (Pendente)!*\n👤 Cliente: ${novoPedido.clienteNome}\n📱 WhatsApp: ${novoPedido.clienteWhatsapp}\n💵 Total: R$ ${total.toFixed(2)}\n📦 Itens:\n${itensList}`;
-      sendWhatsAppAlert(db, alertMsg);
+      sendWhatsAppAlert(db, alertMsg, 'LOJA', { itens: novoPedido.itens });
     }
   } catch (err) {
     console.error("Erro ao enviar notificação de novo pedido online:", err);
@@ -821,7 +1041,7 @@ app.post('/api/pedidos-online/approve', (req, res) => {
       const clientName = clientObj ? clientObj.nome : pedido.clienteNome;
       const itensList = pedido.itens.map(i => `- ${i.nome}: ${i.quantidade}x R$ ${i.precoUnitario.toFixed(2)}`).join('\n');
       const alertMsg = `✅ *Pedido Online Aprovado!*\n👤 Cliente: ${clientName}\n💳 Pagamento: ${formaPagamento}\n💵 Total: R$ ${total.toFixed(2)}\n📦 Itens:\n${itensList}`;
-      sendWhatsAppAlert(db, alertMsg);
+      sendWhatsAppAlert(db, alertMsg, 'LOJA', { itens: pedido.itens });
     }
   } catch (err) {
     console.error("Erro ao enviar notificação de aprovação de pedido:", err);
@@ -1060,7 +1280,7 @@ app.post('/api/payments/verify-payment', (req, res) => {
               const clientName = clientObj ? clientObj.nome : pedido.clienteNome;
               const itensList = pedido.itens.map(i => `- ${i.nome}: ${i.quantidade}x R$ ${i.precoUnitario.toFixed(2)}`).join('\n');
               const alertMsg = `✅ *Pedido Online Pago e Aprovado!*\n👤 Cliente: ${clientName}\n💳 Pagamento: Mercado Pago (Pix/Cartão)\n💵 Total: R$ ${total.toFixed(2)}\n📦 Itens:\n${itensList}`;
-              sendWhatsAppAlert(db, alertMsg);
+              sendWhatsAppAlert(db, alertMsg, 'LOJA', { itens: pedido.itens });
             }
           } catch (err) {
             console.error("Erro ao enviar notificação de aprovação automática de pedido:", err);
@@ -1085,9 +1305,100 @@ app.post('/api/payments/verify-payment', (req, res) => {
 });
 
 // --- SISTEMA ---
-// Download Backup
+// Download Backup antigo (mantido para fallback)
 app.get('/api/backup', (req, res) => {
   res.download(DB_FILE, `backup_vendas_${new Date().toISOString().split('T')[0]}.json`);
+});
+
+// Gerar novo backup, salvar na pasta e mandar pro WhatsApp
+const BACKUPS_DIR = path.join(__dirname, 'backups');
+if (!fs.existsSync(BACKUPS_DIR)) fs.mkdirSync(BACKUPS_DIR);
+
+async function generateBackup() {
+  try {
+    const db = readDB();
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const filename = `backup_${timestamp}.json`;
+    const filepath = path.join(BACKUPS_DIR, filename);
+    
+    // Salvar o arquivo localmente
+    const fileData = JSON.stringify(db, null, 2);
+    fs.writeFileSync(filepath, fileData);
+    
+    // Preparar para enviar via WhatsApp se configurado
+    const config = db.configuracoes || {};
+    if (config.grupoBackup) {
+      const fileBase64 = Buffer.from(fileData).toString('base64');
+      
+      try {
+        await fetch('http://localhost:3002/send-file', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            to: config.grupoBackup,
+            message: `📦 *Backup Automático Gerado*\nData: ${new Date().toLocaleString('pt-BR')}\nArquivo: ${filename}`,
+            fileBase64,
+            fileName: filename,
+            mimeType: 'application/json'
+          })
+        });
+      } catch (err) {
+        console.error("Erro ao enviar backup pro whatsapp microservice:", err);
+      }
+    }
+    
+    return filename;
+  } catch (err) {
+    console.error("Erro ao gerar backup automático:", err);
+    throw err;
+  }
+}
+
+// Agendar Backup Automático: Duas vezes ao dia (08:00 e 18:00)
+cron.schedule('0 8,18 * * *', async () => {
+  console.log("Iniciando rotina de backup automático...");
+  try {
+    await generateBackup();
+    console.log("Backup automático concluído com sucesso.");
+  } catch (err) {
+    console.error("Falha no backup automático.");
+  }
+});
+
+app.post('/api/backup/generate', async (req, res) => {
+  try {
+    const filename = await generateBackup();
+    res.json({ success: true, filename });
+  } catch (err) {
+    res.status(500).json({ error: "Erro ao gerar backup: " + err.message });
+  }
+});
+
+// Listar últimos 5 backups
+app.get('/api/backups', (req, res) => {
+  try {
+    const files = fs.readdirSync(BACKUPS_DIR)
+      .filter(f => f.endsWith('.json'))
+      .map(f => {
+        const stats = fs.statSync(path.join(BACKUPS_DIR, f));
+        return { name: f, date: stats.mtime, size: stats.size };
+      })
+      .sort((a, b) => b.date - a.date)
+      .slice(0, 5);
+    res.json(files);
+  } catch (err) {
+    res.status(500).json({ error: "Erro ao listar backups: " + err.message });
+  }
+});
+
+// Download de backup específico
+app.get('/api/backup/download/:filename', (req, res) => {
+  const filepath = path.join(BACKUPS_DIR, req.params.filename);
+  if (fs.existsSync(filepath)) {
+    res.download(filepath, req.params.filename);
+  } else {
+    res.status(404).send("Arquivo não encontrado.");
+  }
 });
 
 // Upload Backup
@@ -1133,6 +1444,39 @@ app.get('/api/config-server', (req, res) => {
     cwd: process.cwd(),
     nodeEnv: process.env.NODE_ENV || 'development'
   });
+});
+
+// Controles de Serviço (Útil em VPS com PM2/Nodemon)
+app.post('/api/restart', (req, res) => {
+  res.json({ success: true, message: "Reiniciando servidor backend..." });
+  setTimeout(() => {
+    console.log("Comando de reinício backend recebido via API. Desligando o servidor...");
+    process.exit(0);
+  }, 1500);
+});
+
+app.post('/api/stop', (req, res) => {
+  res.json({ success: true, message: "Parando servidor backend..." });
+  setTimeout(() => {
+    console.log("Comando de parada backend recebido via API. Desligando o servidor...");
+    process.exit(0);
+  }, 1500);
+});
+
+// Proxy para controle do WhatsApp Service
+app.post('/api/whatsapp/:action', async (req, res) => {
+  const { action } = req.params;
+  if (!['restart', 'stop'].includes(action)) {
+    return res.status(400).json({ error: "Ação inválida" });
+  }
+  
+  try {
+    const response = await fetch(`http://localhost:3002/${action}`, { method: 'POST' });
+    const data = await response.json();
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: "Erro ao comunicar com microserviço do WhatsApp." });
+  }
 });
 
 // Zerar Banco de Dados

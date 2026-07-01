@@ -1,6 +1,8 @@
 import React, { useContext, useState } from "react";
 import { DatabaseContext } from "../context/DatabaseContext";
 import { Plus, Search, Share2, Clipboard, Edit2, Trash2, X, UploadCloud } from "lucide-react";
+import { toast } from 'react-hot-toast';
+import { useConfirm } from '../context/ConfirmContext';
 
 const UNSPLASH_IMAGES = [
   "https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=300&q=80", // Tenis vermelho
@@ -11,6 +13,7 @@ const UNSPLASH_IMAGES = [
 ];
 
 export default function Produtos() {
+  const { confirm } = useConfirm();
   const { produtos, addProduto, updateProduto, deleteProduto, currentUser } =
     useContext(DatabaseContext);
   const [searchTerm, setSearchTerm] = useState("");
@@ -58,8 +61,8 @@ export default function Produtos() {
     setIsModalOpen(true);
   };
 
-  const handleDelete = (id, name) => {
-    if (window.confirm(`Tem certeza que deseja excluir o produto "${name}"?`)) {
+  const handleDelete = async (id, name) => {
+    if (await confirm({ title: "Excluir Produto", message: `Tem certeza que deseja excluir o produto "${name}"?` })) {
       deleteProduto(id);
     }
   };
@@ -78,7 +81,7 @@ export default function Produtos() {
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!nome || !preco || !estoque) {
-      alert("Por favor, preencha todos os campos obrigatórios (*).");
+      toast.error("Por favor, preencha todos os campos obrigatórios (*).");
       return;
     }
 
@@ -96,10 +99,10 @@ export default function Produtos() {
 
     if (isEditMode && editId) {
       updateProduto(editId, prodData);
-      alert("Produto atualizado com sucesso!");
+      toast.success("Produto atualizado com sucesso!");
     } else {
       addProduto(prodData);
-      alert("Produto cadastrado com sucesso!");
+      toast.success("Produto cadastrado com sucesso!");
     }
 
     // Reset Form
@@ -128,7 +131,7 @@ export default function Produtos() {
     } else {
       // Fallback
       navigator.clipboard.writeText(shareText);
-      alert("Texto de divulgação copiado para a área de transferência!");
+      toast.success("Texto de divulgação copiado para a área de transferência!");
     }
   };
 

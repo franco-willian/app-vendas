@@ -1,5 +1,6 @@
 import React, { useContext, useState } from "react";
 import { DatabaseContext } from "../context/DatabaseContext";
+import { toast } from 'react-hot-toast';
 import {
   DollarSign,
   Truck,
@@ -20,19 +21,53 @@ export default function RelatorioCaixa() {
     usuarios,
     despesas,
     adicionarDespesa,
+    editarDespesa,
     excluirDespesa,
   } = useContext(DatabaseContext);
   const [activeTab, setActiveTab] = useState("caixa"); // 'caixa', 'despesas', 'lucro'
   const [descDespesa, setDescDespesa] = useState("");
   const [valorDespesa, setValorDespesa] = useState("");
+  const [fonteDespesa, setFonteDespesa] = useState("Dinheiro da Empresa");
+  const [usuarioDespesa, setUsuarioDespesa] = useState("");
+  const [editDespesaId, setEditDespesaId] = useState(null);
+  const [periodoFiltro, setPeriodoFiltro] = useState("todos"); // "hoje", "quinzenal", "mensal", "todos"
+  const [comissaoPercent, setComissaoPercent] = useState(50);
+  const [vendedoresExcluidosDaComissao, setVendedoresExcluidosDaComissao] = useState([]);
+
+  const filterByDate = (items, dateField = "data") => {
+    if (periodoFiltro === "todos") return items;
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    
+    return items.filter((item) => {
+      if (!item[dateField]) return false;
+      const itemDate = new Date(item[dateField]);
+      if (periodoFiltro === "hoje") {
+        return itemDate >= today;
+      }
+      if (periodoFiltro === "quinzenal") {
+        const fifteenDaysAgo = new Date(today);
+        fifteenDaysAgo.setDate(fifteenDaysAgo.getDate() - 15);
+        return itemDate >= fifteenDaysAgo;
+      }
+      if (periodoFiltro === "mensal") {
+        const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+        return itemDate >= firstDayOfMonth;
+      }
+      return true;
+    });
+  };
+
+  const vendasFiltradas = filterByDate(vendas);
+  const despesasFiltradas = filterByDate(despesas);
 
   // 1. Resumo do Caixa
-  const pagamentos = vendas.reduce(
+  const pagamentos = vendasFiltradas.reduce(
     (acc, v) => {
       acc[v.formaPagamento] = (acc[v.formaPagamento] || 0) + v.total;
       return acc;
     },
-    { Dinheiro: 0, Pix: 0, Cartão: 0 },
+    { Dinheiro: 0, Pix: 0, Cartão: 0, Fiado: 0 },
   );
 
   const totalCaixa = pagamentos.Dinheiro + pagamentos.Pix + pagamentos.Cartão;
@@ -40,7 +75,7 @@ export default function RelatorioCaixa() {
   // 2. Vendas por Vendedor
   const vendasPorVendedor = usuarios
     .map((u) => {
-      const totalVendido = vendas
+      const totalVendido = vendasFiltradas
         .filter((v) => v.vendedor === u.nome)
         .reduce((acc, v) => acc + v.total, 0);
       return {
@@ -66,7 +101,7 @@ export default function RelatorioCaixa() {
   );
 
   // 4. Lucratividade
-  const validVendasForRevenue = vendas.filter(
+  const validVendasForRevenue = vendasFiltradas.filter(
     (v) => !(v.formaPagamento === "Fiado" && v.statusPagamento === "pendente"),
   );
   const faturamentoTotal = validVendasForRevenue.reduce(
@@ -80,18 +115,87 @@ export default function RelatorioCaixa() {
     );
     return acc + custoVenda;
   }, 0);
-  const despesasTotal = despesas.reduce((acc, d) => acc + (d.valor || 0), 0);
+  const despesasTotal = despesasFiltradas.reduce((acc, d) => acc + (d.valor || 0), 0);
   const lucroLiquido = faturamentoTotal - custoTotal - despesasTotal;
+
+  // 5. Divisão de Lucro
+  const lucroBrutoTotal = faturamentoTotal - custoTotal;
+  const lucroVendedoresMaxTotal = lucroLiquido > 0 ? lucroLiquido * (comissaoPercent / 100) : 0;
+  
+  const divisaoVendedores = usuarios
+    .filter(u => u.tipo !== "admin") // ignorar o admin mestre se for o caso, mas vamos calcular para todos que venderam
+    .map(u => {
+      const vendasDoVendedor = validVendasForRevenue.filter(v => v.vendedor === u.nome);
+      const fatVendedor = vendasDoVendedor.reduce((acc, v) => acc + v.total, 0);
+      const custoVendedor = vendasDoVendedor.reduce((acc, v) => {
+        return acc + v.itens.reduce((sum, item) => sum + (item.custoUnitario || 0) * item.quantidade, 0);
+      }, 0);
+      const lucroBrutoVendedor = fatVendedor - custoVendedor;
+      
+      const proporcao = lucroBrutoTotal > 0 ? (lucroBrutoVendedor / lucroBrutoTotal) : 0;
+      
+      const isExcluido = vendedoresExcluidosDaComissao.includes(u.nome);
+      const valorComissao = isExcluido ? 0 : (lucroVendedoresMaxTotal * proporcao);
+      
+      return {
+        nome: u.nome,
+        lucroBruto: lucroBrutoVendedor,
+        comissao: valorComissao,
+        proporcao: proporcao * 100,
+        recebeComissao: !isExcluido
+      };
+    })
+    .filter(v => v.lucroBruto > 0)
+    .sort((a, b) => b.comissao - a.comissao || b.lucroBruto - a.lucroBruto);
+
+  const comissaoRealTotal = divisaoVendedores.reduce((acc, v) => acc + v.comissao, 0);
+  const lucroEmpresaReal = lucroLiquido > 0 ? (lucroLiquido - comissaoRealTotal) : lucroLiquido;
 
   const handleAddDespesa = (e) => {
     e.preventDefault();
-    if (!descDespesa || !valorDespesa) return;
-    adicionarDespesa({
-      descricao: descDespesa,
-      valor: parseFloat(valorDespesa),
-    });
+    if (!descDespesa || !valorDespesa || !usuarioDespesa) {
+      toast.error("Preencha todos os campos obrigatórios");
+      return;
+    }
+    
+    if (editDespesaId) {
+      editarDespesa(editDespesaId, {
+        descricao: descDespesa,
+        valor: parseFloat(valorDespesa),
+        fonte: fonteDespesa,
+        usuario: usuarioDespesa,
+      });
+      setEditDespesaId(null);
+    } else {
+      adicionarDespesa({
+        descricao: descDespesa,
+        valor: parseFloat(valorDespesa),
+        fonte: fonteDespesa,
+        usuario: usuarioDespesa,
+      });
+    }
+    
     setDescDespesa("");
     setValorDespesa("");
+    setFonteDespesa("Dinheiro da Empresa");
+    setUsuarioDespesa("");
+  };
+
+  const cancelarEdicao = () => {
+    setEditDespesaId(null);
+    setDescDespesa("");
+    setValorDespesa("");
+    setFonteDespesa("Dinheiro da Empresa");
+    setUsuarioDespesa("");
+  };
+
+  const iniciarEdicaoDespesa = (d) => {
+    setEditDespesaId(d.id);
+    setDescDespesa(d.descricao);
+    setValorDespesa(d.valor);
+    setFonteDespesa(d.fonte || "Dinheiro da Empresa");
+    setUsuarioDespesa(d.usuario || "");
+    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   return (
@@ -106,6 +210,45 @@ export default function RelatorioCaixa() {
             Acompanhamento financeiro, cargas ativas e desempenho da equipe.
           </p>
         </div>
+      </div>
+
+      <div
+        style={{
+          display: "flex",
+          gap: "8px",
+          marginBottom: "16px",
+          overflowX: "auto",
+          paddingBottom: "4px",
+        }}
+      >
+        <button
+          className={`btn ${periodoFiltro === "hoje" ? "btn-primary" : "btn-secondary"}`}
+          onClick={() => setPeriodoFiltro("hoje")}
+          style={{ whiteSpace: "nowrap", padding: "6px 12px", fontSize: "13px" }}
+        >
+          Hoje
+        </button>
+        <button
+          className={`btn ${periodoFiltro === "quinzenal" ? "btn-primary" : "btn-secondary"}`}
+          onClick={() => setPeriodoFiltro("quinzenal")}
+          style={{ whiteSpace: "nowrap", padding: "6px 12px", fontSize: "13px" }}
+        >
+          Últimos 15 Dias
+        </button>
+        <button
+          className={`btn ${periodoFiltro === "mensal" ? "btn-primary" : "btn-secondary"}`}
+          onClick={() => setPeriodoFiltro("mensal")}
+          style={{ whiteSpace: "nowrap", padding: "6px 12px", fontSize: "13px" }}
+        >
+          Este Mês
+        </button>
+        <button
+          className={`btn ${periodoFiltro === "todos" ? "btn-primary" : "btn-secondary"}`}
+          onClick={() => setPeriodoFiltro("todos")}
+          style={{ whiteSpace: "nowrap", padding: "6px 12px", fontSize: "13px" }}
+        >
+          Todos os Tempos
+        </button>
       </div>
 
       <div
@@ -137,6 +280,13 @@ export default function RelatorioCaixa() {
           style={{ whiteSpace: "nowrap" }}
         >
           <PieChart size={18} /> Lucratividade Real
+        </button>
+        <button
+          className={`btn ${activeTab === "divisao" ? "btn-primary" : "btn-secondary"}`}
+          onClick={() => setActiveTab("divisao")}
+          style={{ whiteSpace: "nowrap" }}
+        >
+          <User size={18} /> Divisão de Lucro
         </button>
       </div>
 
@@ -274,8 +424,39 @@ export default function RelatorioCaixa() {
                 Crédito e Débito
               </p>
             </div>
-          </div>
 
+            <div className="card">
+              <div className="flex-between mb-12">
+                <span
+                  style={{ color: "var(--text-secondary)", fontWeight: 500 }}
+                >
+                  Total Fiado
+                </span>
+                <div
+                  style={{
+                    padding: "6px",
+                    borderRadius: "6px",
+                    background: "rgba(220, 38, 38, 0.1)",
+                    color: "var(--danger)",
+                  }}
+                >
+                  <Clock size={18} />
+                </div>
+              </div>
+              <h3 style={{ fontSize: "28px", fontWeight: 700, margin: 0 }}>
+                R$ {pagamentos.Fiado.toFixed(2)}
+              </h3>
+              <p
+                style={{
+                  fontSize: "12px",
+                  color: "var(--text-muted)",
+                  marginTop: "4px",
+                }}
+              >
+                Vendas pendentes e recebidas
+              </p>
+            </div>
+          </div>
           <div
             style={{
               display: "grid",
@@ -305,8 +486,9 @@ export default function RelatorioCaixa() {
                 }}
               >
                 {vendasPorVendedor.map((v) => {
+                  const totalGeralVendas = vendasFiltradas.reduce((acc, curr) => acc + curr.total, 0);
                   const porcentagem =
-                    totalCaixa > 0 ? (v.total / totalCaixa) * 100 : 0;
+                    totalGeralVendas > 0 ? (v.total / totalGeralVendas) * 100 : 0;
                   return (
                     <div key={v.usuario}>
                       <div className="flex-between mb-8">
@@ -588,7 +770,7 @@ export default function RelatorioCaixa() {
                 fontWeight: 600,
               }}
             >
-              Lançar Nova Despesa
+              {editDespesaId ? "Editar Despesa" : "Lançar Nova Despesa"}
             </h3>
             <form
               onSubmit={handleAddDespesa}
@@ -605,6 +787,7 @@ export default function RelatorioCaixa() {
                   required
                 />
               </div>
+              
               <div className="form-group">
                 <label className="form-label">Valor (R$)</label>
                 <input
@@ -617,13 +800,55 @@ export default function RelatorioCaixa() {
                   required
                 />
               </div>
-              <button
-                type="submit"
-                className="btn btn-primary"
-                style={{ width: "100%", justifyContent: "center" }}
-              >
-                <Plus size={18} /> Adicionar Despesa
-              </button>
+
+              <div className="form-group">
+                <label className="form-label">Origem do Valor (Fonte)</label>
+                <select
+                  className="form-input"
+                  value={fonteDespesa}
+                  onChange={(e) => setFonteDespesa(e.target.value)}
+                  required
+                >
+                  <option value="Dinheiro da Empresa">Dinheiro da Empresa</option>
+                  <option value="Pix">Pix da Empresa</option>
+                  <option value="Cartão de Crédito">Cartão de Crédito da Empresa</option>
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Usuário que Gastou</label>
+                <select
+                  className="form-input"
+                  value={usuarioDespesa}
+                  onChange={(e) => setUsuarioDespesa(e.target.value)}
+                  required
+                >
+                  <option value="">Selecione um usuário...</option>
+                  {usuarios.map(u => (
+                    <option key={u.id} value={u.nome}>{u.nome}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div style={{ display: "flex", gap: "12px", marginTop: "8px" }}>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  style={{ flex: 1, justifyContent: "center" }}
+                >
+                  {editDespesaId ? <><CheckCircle2 size={18} /> Salvar Alterações</> : <><Plus size={18} /> Adicionar Despesa</>}
+                </button>
+                {editDespesaId && (
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={cancelarEdicao}
+                    style={{ justifyContent: "center" }}
+                  >
+                    Cancelar
+                  </button>
+                )}
+              </div>
             </form>
           </div>
 
@@ -637,7 +862,7 @@ export default function RelatorioCaixa() {
             >
               Histórico de Despesas
             </h3>
-            {despesas.length === 0 ? (
+            {despesasFiltradas.length === 0 ? (
               <div
                 style={{
                   textAlign: "center",
@@ -655,7 +880,7 @@ export default function RelatorioCaixa() {
                   gap: "12px",
                 }}
               >
-                {despesas.map((d) => (
+                {despesasFiltradas.map((d) => (
                   <div
                     key={d.id}
                     className="flex-between"
@@ -677,6 +902,8 @@ export default function RelatorioCaixa() {
                         }}
                       >
                         {new Date(d.data).toLocaleDateString()}
+                        {d.usuario && <span style={{ marginLeft: "8px", color: "var(--primary)" }}>👤 {d.usuario}</span>}
+                        {d.fonte && <span style={{ marginLeft: "8px", fontWeight: 500 }}>💳 {d.fonte}</span>}
                       </div>
                     </div>
                     <div
@@ -689,17 +916,34 @@ export default function RelatorioCaixa() {
                       <strong style={{ color: "var(--danger)" }}>
                         R$ {d.valor.toFixed(2)}
                       </strong>
-                      <button
-                        onClick={() => excluirDespesa(d.id)}
-                        style={{
-                          background: "transparent",
-                          border: "none",
-                          color: "var(--text-muted)",
-                          cursor: "pointer",
-                        }}
-                      >
-                        <Trash2 size={16} />
-                      </button>
+                      <div style={{ display: "flex", gap: "8px" }}>
+                        <button
+                          onClick={() => iniciarEdicaoDespesa(d)}
+                          style={{
+                            background: "transparent",
+                            border: "none",
+                            color: "var(--primary)",
+                            cursor: "pointer",
+                            padding: "4px"
+                          }}
+                          title="Editar"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                        </button>
+                        <button
+                          onClick={() => excluirDespesa(d.id)}
+                          style={{
+                            background: "transparent",
+                            border: "none",
+                            color: "var(--text-muted)",
+                            cursor: "pointer",
+                            padding: "4px"
+                          }}
+                          title="Excluir"
+                        >
+                          <Trash2 size={18} />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -840,6 +1084,95 @@ export default function RelatorioCaixa() {
             >
               R$ {lucroLiquido.toFixed(2)}
             </h1>
+          </div>
+        </div>
+      )}
+
+      {activeTab === "divisao" && (
+        <div style={{ animation: "fadeIn 0.3s ease-out" }}>
+          <div className="card mb-24" style={{ display: "flex", flexWrap: "wrap", gap: "16px", alignItems: "center", justifyContent: "space-between" }}>
+            <div>
+              <h3 style={{ fontSize: "18px", margin: 0, fontWeight: 600 }}>Parâmetros da Divisão</h3>
+              <p style={{ fontSize: "12px", color: "var(--text-muted)", marginTop: "4px" }}>
+                Defina a % do lucro líquido que será repassada aos vendedores.
+              </p>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <label style={{ fontWeight: 500, fontSize: "14px" }}>% Vendedores:</label>
+              <input 
+                type="number" 
+                className="form-input" 
+                style={{ width: "100px" }}
+                value={comissaoPercent}
+                onChange={(e) => setComissaoPercent(Number(e.target.value))}
+                min="0"
+                max="100"
+              />
+            </div>
+          </div>
+
+          <div className="grid-responsive mb-24">
+            <div className="card" style={{ borderLeft: "4px solid var(--primary)", textAlign: "center", padding: "32px 16px" }}>
+              <h3 style={{ fontSize: "16px", color: "var(--text-secondary)", fontWeight: 500 }}>Lucro Líquido Total</h3>
+              <h1 style={{ fontSize: "32px", margin: "8px 0", color: lucroLiquido >= 0 ? "var(--success)" : "var(--danger)" }}>
+                R$ {lucroLiquido.toFixed(2)}
+              </h1>
+              <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>Base de cálculo</span>
+            </div>
+            
+            <div className="card" style={{ borderLeft: "4px solid var(--success)", textAlign: "center", padding: "32px 16px" }}>
+              <h3 style={{ fontSize: "16px", color: "var(--text-secondary)", fontWeight: 500 }}>Fatia da Empresa</h3>
+              <h1 style={{ fontSize: "32px", margin: "8px 0", color: lucroEmpresaReal >= 0 ? "var(--success)" : "var(--danger)" }}>
+                R$ {lucroEmpresaReal.toFixed(2)}
+              </h1>
+              <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>Caixa livre da loja</span>
+            </div>
+
+            <div className="card" style={{ borderLeft: "4px solid var(--warning)", textAlign: "center", padding: "32px 16px" }}>
+              <h3 style={{ fontSize: "16px", color: "var(--text-secondary)", fontWeight: 500 }}>Comissão Vendedores</h3>
+              <h1 style={{ fontSize: "32px", margin: "8px 0", color: "var(--warning)" }}>
+                R$ {comissaoRealTotal.toFixed(2)}
+              </h1>
+              <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>A ser rateado</span>
+            </div>
+          </div>
+
+          <div className="card">
+            <h3 style={{ fontSize: "18px", marginBottom: "16px", fontWeight: 600 }}>Rateio de Comissões por Vendedor</h3>
+            {divisaoVendedores.length === 0 ? (
+              <p style={{ textAlign: "center", padding: "24px", color: "var(--text-muted)" }}>Nenhum lucro gerado por vendedores neste período.</p>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                {divisaoVendedores.map((v) => (
+                  <div key={v.nome} className="flex-between" style={{ padding: "16px", border: "1px solid var(--border)", borderRadius: "8px", opacity: v.recebeComissao ? 1 : 0.6 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                      <input 
+                        type="checkbox" 
+                        checked={v.recebeComissao}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setVendedoresExcluidosDaComissao(prev => prev.filter(nome => nome !== v.nome));
+                          } else {
+                            setVendedoresExcluidosDaComissao(prev => [...prev, v.nome]);
+                          }
+                        }}
+                        style={{ width: "18px", height: "18px", cursor: "pointer" }}
+                      />
+                      <div>
+                        <strong style={{ display: "block", fontSize: "16px", textDecoration: v.recebeComissao ? "none" : "line-through" }}>{v.nome}</strong>
+                        <span style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
+                          Gerou R$ {v.lucroBruto.toFixed(2)} de Lucro Bruto ({v.proporcao.toFixed(1)}% do total)
+                        </span>
+                      </div>
+                    </div>
+                    <div style={{ textAlign: "right" }}>
+                      <strong style={{ fontSize: "20px", color: v.recebeComissao ? "var(--success)" : "var(--text-muted)" }}>R$ {v.comissao.toFixed(2)}</strong>
+                      <div style={{ fontSize: "12px", color: "var(--text-muted)" }}>A pagar</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}

@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useContext } from "react";
+import { Toaster, toast } from "react-hot-toast";
 import { DatabaseProvider, DatabaseContext } from "./context/DatabaseContext";
+import { ConfirmProvider } from "./context/ConfirmContext";
 import Dashboard from "./pages/Dashboard";
 import Checkout from "./pages/Checkout";
 import CargaDiaria from "./pages/CargaDiaria";
@@ -663,7 +665,7 @@ function AppContent() {
               onSubmit={(e) => {
                 e.preventDefault();
                 if (!profileNome || !profileUsuario || !profileSenha) {
-                  alert("Preencha todos os campos obrigatórios.");
+                  toast.error("Preencha todos os campos obrigatórios.");
                   return;
                 }
                 updateUsuario(currentUser.id, {
@@ -672,7 +674,7 @@ function AppContent() {
                   senha: profileSenha,
                 });
                 setIsProfileModalOpen(false);
-                alert("Perfil atualizado com sucesso!");
+                toast.success("Perfil atualizado com sucesso!");
               }}
             >
               <div
@@ -768,9 +770,33 @@ function AppContent() {
 
 function App() {
   return (
-    <DatabaseProvider>
-      <AppContent />
-    </DatabaseProvider>
+    <ConfirmProvider>
+      <DatabaseProvider>
+        <Toaster
+          position="bottom-right"
+          toastOptions={{
+            style: {
+              background: 'var(--bg-card)',
+              color: 'var(--text-primary)',
+              border: '1px solid var(--border)',
+            },
+            success: {
+              iconTheme: {
+                primary: 'var(--success)',
+                secondary: 'white',
+              },
+            },
+            error: {
+              iconTheme: {
+                primary: 'var(--danger)',
+                secondary: 'white',
+              },
+            },
+          }}
+        />
+        <AppContent />
+      </DatabaseProvider>
+    </ConfirmProvider>
   );
 }
 

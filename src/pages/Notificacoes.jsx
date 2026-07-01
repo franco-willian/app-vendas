@@ -1,6 +1,7 @@
 import React, { useContext, useState, useEffect } from 'react';
 import { DatabaseContext } from '../context/DatabaseContext';
 import { Settings, Send } from 'lucide-react';
+import { toast } from 'react-hot-toast';
 
 export default function Notificacoes() {
   const { 
@@ -10,83 +11,96 @@ export default function Notificacoes() {
   } = useContext(DatabaseContext);
 
   // Config WhatsApp State
-  const [gerenteWhatsApp, setGerenteWhatsApp] = useState('');
-  const [whatsappProvider, setWhatsappProvider] = useState('callmebot');
-  const [callMeBotApiKey, setCallMeBotApiKey] = useState('');
-  const [textMeBotApiKey, setTextMeBotApiKey] = useState('');
-  const [notifyCargaStart, setNotifyCargaStart] = useState(true);
-  const [notifyCargaReturn, setNotifyCargaReturn] = useState(true);
-  const [notifyVendas, setNotifyVendas] = useState(true);
-  const [notifyEstoqueRetornado, setNotifyEstoqueRetornado] = useState(true);
+  const [grupoDonuts, setGrupoDonuts] = useState('');
+  const [grupoBolo, setGrupoBolo] = useState('');
+  const [grupoBrownie, setGrupoBrownie] = useState('');
+  const [grupoCaixa, setGrupoCaixa] = useState('');
+  const [grupoLojaOnline, setGrupoLojaOnline] = useState('');
+  const [grupoBackup, setGrupoBackup] = useState('');
+  
+  // WhatsApp Microservice State
+  const [wpStatus, setWpStatus] = useState(false);
+  const [wpQr, setWpQr] = useState('');
+  const [wpGroups, setWpGroups] = useState([]);
 
   useEffect(() => {
     if (configuracoes) {
-      setGerenteWhatsApp(configuracoes.gerenteWhatsApp || '');
-      setWhatsappProvider(configuracoes.whatsappProvider || 'callmebot');
-      setCallMeBotApiKey(configuracoes.callMeBotApiKey || '');
-      setTextMeBotApiKey(configuracoes.textMeBotApiKey || '');
-      setNotifyCargaStart(configuracoes.notifyCargaStart !== false);
-      setNotifyCargaReturn(configuracoes.notifyCargaReturn !== false);
-      setNotifyVendas(configuracoes.notifyVendas !== false);
-      setNotifyEstoqueRetornado(configuracoes.notifyEstoqueRetornado !== false);
+      setGrupoDonuts(configuracoes.grupoDonuts || '');
+      setGrupoBolo(configuracoes.grupoBolo || '');
+      setGrupoBrownie(configuracoes.grupoBrownie || '');
+      setGrupoCaixa(configuracoes.grupoCaixa || '');
+      setGrupoLojaOnline(configuracoes.grupoLojaOnline || '');
+      setGrupoBackup(configuracoes.grupoBackup || '');
     }
   }, [configuracoes]);
+
+  useEffect(() => {
+    let interval;
+    const checkStatus = async () => {
+      try {
+        const res = await fetch('/api/whatsapp/status');
+        const data = await res.json();
+        setWpStatus(data.connected);
+
+        if (data.connected) {
+          const resGroups = await fetch('/api/whatsapp/groups');
+          const dataGroups = await resGroups.json();
+          setWpGroups(dataGroups.groups || []);
+        } else {
+          const resQr = await fetch('/api/whatsapp/qr');
+          const dataQr = await resQr.json();
+          setWpQr(dataQr.qr || '');
+        }
+      } catch (err) {
+        console.error("Erro ao checar whatsapp:", err);
+      }
+    };
+
+    checkStatus();
+    interval = setInterval(checkStatus, 5000);
+    return () => clearInterval(interval);
+  }, []);
 
   const handleSaveConfig = (e) => {
     e.preventDefault();
     updateConfiguracoes({ 
       ...configuracoes,
-      gerenteWhatsApp, 
-      whatsappProvider,
-      callMeBotApiKey, 
-      textMeBotApiKey, 
-      notifyCargaStart, 
-      notifyCargaReturn, 
-      notifyVendas, 
-      notifyEstoqueRetornado 
+      grupoDonuts,
+      grupoBolo,
+      grupoBrownie,
+      grupoCaixa,
+      grupoLojaOnline,
+      grupoBackup
     });
-    alert("Configurações salvas com sucesso!");
+    toast.success("Configurações salvas com sucesso!");
   };
 
   const handleTestNotification = () => {
-    if (!gerenteWhatsApp) {
-      alert("Por favor, preencha o número do WhatsApp antes de testar.");
+    if (!grupoCaixa && !grupoDonuts && !grupoBolo && !grupoBrownie && !grupoLojaOnline && !grupoBackup) {
+      toast.success("Por favor, preencha pelo menos um número/grupo para testar.");
       return;
     }
     
-    if (callMeBotApiKey || textMeBotApiKey) {
-      fetch('/api/whatsapp/test', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          gerenteWhatsApp, 
-          whatsappProvider,
-          callMeBotApiKey,
-          textMeBotApiKey,
-          notifyCargaStart,
-          notifyCargaReturn,
-          notifyVendas,
-          notifyEstoqueRetornado
-        })
+    fetch('/api/whatsapp/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        grupoDonuts,
+        grupoBolo,
+        grupoBrownie,
+        grupoCaixa,
+        grupoLojaOnline,
+        grupoBackup
       })
-      .then(res => {
-        if (!res.ok) throw new Error("Erro ao enviar mensagem de teste");
-        return res.json();
-      })
-      .then(() => {
-        alert(`Mensagem de teste enviada via ${whatsappProvider === 'textmebot' ? 'TextMeBot' : 'CallMeBot'}! Verifique seu WhatsApp.`);
-      })
-      .catch(err => {
-        console.error(err);
-        alert(`Falha ao enviar mensagem de teste via ${whatsappProvider === 'textmebot' ? 'TextMeBot' : 'CallMeBot'}.`);
-      });
-    } else {
-      // Teste manual
-      const testMsg = `🔔 *Teste de Conexão Manual do VendaRápida!*\nParabéns! Redirecionamento manual funcionando.`;
-      const cleanPhone = gerenteWhatsApp.replace(/\D/g, '');
-      const url = `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(testMsg)}`;
-      window.open(url, '_blank');
-    }
+    })
+    .then(res => res.json())
+    .then(() => {
+      toast.success(`Mensagem de teste enviada! Verifique o WhatsApp.`);
+    })
+    .catch(err => {
+      console.error(err);
+      toast.error(`Falha ao enviar mensagem de teste.`);
+    });
   };
 
   // Se não for admin, não permite visualizar
@@ -118,115 +132,108 @@ export default function Notificacoes() {
         <form onSubmit={handleSaveConfig} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           
           {/* Seção WhatsApp */}
+          {/* Seção WhatsApp e Roteamento */}
           <div style={{ borderBottom: '1px solid var(--border)', paddingBottom: '20px' }}>
             <h4 style={{ fontSize: '15px', fontWeight: 600, marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-              📱 Configurações do WhatsApp
+              📱 Configurações do WhatsApp (Roteamento)
             </h4>
             
-            <div className="form-group" style={{ marginBottom: '14px' }}>
-              <label className="form-label" style={{ fontWeight: 500 }}>Celular WhatsApp (com DDI e DDD)</label>
-              <input
-                type="text"
-                className="form-input w-full"
-                value={gerenteWhatsApp}
-                onChange={(e) => setGerenteWhatsApp(e.target.value)}
-                placeholder="Ex: 5511999998888"
-              />
-              <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
-                Código do país + DDD + número (sem traços ou espaços). Ex: 55 para o Brasil.
-              </span>
+            <div style={{ padding: '16px', background: 'var(--bg-app)', borderRadius: 'var(--radius-sm)', marginBottom: '20px', border: '1px solid var(--border)' }}>
+              <h5 style={{ margin: '0 0 10px 0', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                Status do WhatsApp Local
+                <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', background: wpStatus ? 'var(--success)' : 'var(--danger)' }}></span>
+              </h5>
+              
+              {!wpStatus ? (
+                <div style={{ textAlign: 'center', padding: '10px' }}>
+                  <p style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>Escaneie o QR Code abaixo para conectar o bot ao seu número de WhatsApp:</p>
+                  {wpQr ? (
+                    <div style={{ margin: '10px auto', background: '#fff', padding: '10px', display: 'inline-block', borderRadius: '8px' }}>
+                      <img src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(wpQr)}`} alt="WhatsApp QR Code" />
+                    </div>
+                  ) : (
+                    <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Aguardando geração do QR Code...</p>
+                  )}
+                </div>
+              ) : (
+                <p style={{ fontSize: '13px', color: 'var(--success)' }}>WhatsApp Conectado com Sucesso! Os grupos abaixo estão atualizados.</p>
+              )}
             </div>
 
             <div className="form-group" style={{ marginBottom: '14px' }}>
-              <label className="form-label" style={{ fontWeight: 500 }}>Sistema de Envio</label>
-              <select 
-                className="form-input w-full" 
-                value={whatsappProvider} 
-                onChange={(e) => setWhatsappProvider(e.target.value)}
-              >
-                <option value="callmebot">CallMeBot</option>
-                <option value="textmebot">TextMeBot</option>
-              </select>
+              <label className="form-label" style={{ fontWeight: 500 }}>Celular/Grupo: Vendas Donuts</label>
+              {wpStatus ? (
+                <select className="form-input w-full" value={grupoDonuts} onChange={(e) => setGrupoDonuts(e.target.value)}>
+                  <option value="">-- Nenhum --</option>
+                  {wpGroups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                </select>
+              ) : (
+                <input type="text" className="form-input w-full" value={grupoDonuts} onChange={(e) => setGrupoDonuts(e.target.value)} placeholder="Ex: 1203630... ou 5511999998888" />
+              )}
             </div>
 
-            {whatsappProvider === 'callmebot' ? (
-              <div className="form-group" style={{ marginBottom: 0 }}>
-                <label className="form-label" style={{ fontWeight: 500 }}>Chave API CallMeBot (Opcional)</label>
-                <input
-                  type="text"
-                  className="form-input w-full"
-                  value={callMeBotApiKey}
-                  onChange={(e) => setCallMeBotApiKey(e.target.value)}
-                  placeholder="Chave de API do CallMeBot"
-                />
-                <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
-                  Deixe em branco para envio manual via WhatsApp Web, ou insira a chave obtida no site <a href="https://www.callmebot.com" target="_blank" rel="noreferrer" style={{ textDecoration: 'underline', color: 'var(--primary)' }}>callmebot.com</a>.
-                </span>
-              </div>
-            ) : (
-              <div className="form-group" style={{ marginBottom: 0 }}>
-                <label className="form-label" style={{ fontWeight: 500 }}>Chave API TextMeBot (Opcional)</label>
-                <input
-                  type="text"
-                  className="form-input w-full"
-                  value={textMeBotApiKey}
-                  onChange={(e) => setTextMeBotApiKey(e.target.value)}
-                  placeholder="Chave de API do TextMeBot"
-                />
-                <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
-                  Insira a chave obtida no site <a href="https://textmebot.com" target="_blank" rel="noreferrer" style={{ textDecoration: 'underline', color: 'var(--primary)' }}>textmebot.com</a>.
-                </span>
-              </div>
-            )}
-          </div>
+            <div className="form-group" style={{ marginBottom: '14px' }}>
+              <label className="form-label" style={{ fontWeight: 500 }}>Celular/Grupo: Vendas Bolo de Pote</label>
+              {wpStatus ? (
+                <select className="form-input w-full" value={grupoBolo} onChange={(e) => setGrupoBolo(e.target.value)}>
+                  <option value="">-- Nenhum --</option>
+                  {wpGroups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                </select>
+              ) : (
+                <input type="text" className="form-input w-full" value={grupoBolo} onChange={(e) => setGrupoBolo(e.target.value)} placeholder="Ex: 1203630... ou 5511999998888" />
+              )}
+            </div>
 
+            <div className="form-group" style={{ marginBottom: '14px' }}>
+              <label className="form-label" style={{ fontWeight: 500 }}>Celular/Grupo: Vendas Gourmet Brownie</label>
+              {wpStatus ? (
+                <select className="form-input w-full" value={grupoBrownie} onChange={(e) => setGrupoBrownie(e.target.value)}>
+                  <option value="">-- Nenhum --</option>
+                  {wpGroups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                </select>
+              ) : (
+                <input type="text" className="form-input w-full" value={grupoBrownie} onChange={(e) => setGrupoBrownie(e.target.value)} placeholder="Ex: 1203630... ou 5511999998888" />
+              )}
+            </div>
 
+            <div className="form-group" style={{ marginBottom: '14px' }}>
+              <label className="form-label" style={{ fontWeight: 500 }}>Celular/Grupo: Relatório do Caixa / Saídas</label>
+              {wpStatus ? (
+                <select className="form-input w-full" value={grupoCaixa} onChange={(e) => setGrupoCaixa(e.target.value)}>
+                  <option value="">-- Nenhum --</option>
+                  {wpGroups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                </select>
+              ) : (
+                <input type="text" className="form-input w-full" value={grupoCaixa} onChange={(e) => setGrupoCaixa(e.target.value)} placeholder="Ex: 1203630... ou 5511999998888" />
+              )}
+            </div>
 
-          {/* Seletores de Notificação */}
-          <div>
-            <label className="form-label" style={{ fontWeight: 600, marginBottom: '8px' }}>Notificações Desejadas (WhatsApp)</label>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', background: 'var(--bg-app)', padding: '16px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)' }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '14px', cursor: 'pointer', userSelect: 'none' }}>
-                <input
-                  type="checkbox"
-                  checked={notifyCargaStart}
-                  onChange={(e) => setNotifyCargaStart(e.target.checked)}
-                  style={{ width: '18px', height: '18px', cursor: 'pointer' }}
-                />
-                <span>Nova Saída para a Rua! 🚚</span>
-              </label>
+            <div className="form-group" style={{ marginBottom: '14px' }}>
+              <label className="form-label" style={{ fontWeight: 500 }}>Celular/Grupo: Pedidos da Loja Online</label>
+              {wpStatus ? (
+                <select className="form-input w-full" value={grupoLojaOnline} onChange={(e) => setGrupoLojaOnline(e.target.value)}>
+                  <option value="">-- Nenhum --</option>
+                  {wpGroups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                </select>
+              ) : (
+                <input type="text" className="form-input w-full" value={grupoLojaOnline} onChange={(e) => setGrupoLojaOnline(e.target.value)} placeholder="Ex: 1203630... ou 5511999998888" />
+              )}
+            </div>
 
-              <label style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '14px', cursor: 'pointer', userSelect: 'none' }}>
-                <input
-                  type="checkbox"
-                  checked={notifyCargaReturn}
-                  onChange={(e) => setNotifyCargaReturn(e.target.checked)}
-                  style={{ width: '18px', height: '18px', cursor: 'pointer' }}
-                />
-                <span>Fechamento de Caixa! 💰</span>
-              </label>
-
-              <label style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '14px', cursor: 'pointer', userSelect: 'none' }}>
-                <input
-                  type="checkbox"
-                  checked={notifyVendas}
-                  onChange={(e) => setNotifyVendas(e.target.checked)}
-                  style={{ width: '18px', height: '18px', cursor: 'pointer' }}
-                />
-                <span>Vendas Realizadas! 🛍️</span>
-              </label>
-
-              <label style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '14px', cursor: 'pointer', userSelect: 'none' }}>
-                <input
-                  type="checkbox"
-                  checked={notifyEstoqueRetornado}
-                  onChange={(e) => setNotifyEstoqueRetornado(e.target.checked)}
-                  style={{ width: '18px', height: '18px', cursor: 'pointer' }}
-                />
-                <span>Estoque Devolvido & Disponível Central! 🔄</span>
-              </label>
+            <div className="form-group" style={{ marginBottom: '14px' }}>
+              <label className="form-label" style={{ fontWeight: 500 }}>Celular/Grupo: Backups do Sistema</label>
+              {wpStatus ? (
+                <select className="form-input w-full" value={grupoBackup} onChange={(e) => setGrupoBackup(e.target.value)}>
+                  <option value="">-- Nenhum --</option>
+                  {wpGroups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                </select>
+              ) : (
+                <input type="text" className="form-input w-full" value={grupoBackup} onChange={(e) => setGrupoBackup(e.target.value)} placeholder="Ex: 1203630... ou 5511999998888" />
+              )}
             </div>
           </div>
+
+
 
           {/* Ações */}
           <div style={{ display: 'flex', gap: '12px', marginTop: '12px' }}>
